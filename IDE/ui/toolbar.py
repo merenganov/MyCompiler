@@ -1,16 +1,15 @@
 import tkinter as tk
 from tkinter import ttk
 
-class Toolbar:
-    def __init__(self, parent, actions):
-        self.frame = ttk.Frame(parent)
+
+class Toolbar(ttk.Frame):
+    def __init__(self, parent, actions: dict):
+        super().__init__(parent)
         self.actions = actions
 
-        ttk.Button(self.frame, text="Léxico", command=actions["compile_lex"]).pack(side=tk.LEFT, padx=2)
-        ttk.Button(self.frame, text="Sintáctico", command=actions["compile_syn"]).pack(side=tk.LEFT, padx=2)
-        ttk.Button(self.frame, text="Semántico", command=actions["compile_sem"]).pack(side=tk.LEFT, padx=2)
-        ttk.Button(self.frame, text="Intermedio", command=actions["compile_ir"]).pack(side=tk.LEFT, padx=2)
-        ttk.Button(self.frame, text="Ejecutar", command=actions["run"]).pack(side=tk.LEFT, padx=2)
-
-    def pack(self):
-        self.frame.pack(fill=tk.X, padx=6, pady=4)
+        # Solo botón de tema
+        cmd = self.actions.get("toggle_theme")
+        state = tk.NORMAL if callable(cmd) else tk.DISABLED
+        ttk.Button(self, text="Oscuro/Claro", command=cmd, state=state).pack(
+            side=tk.RIGHT, padx=6, pady=2
+        )

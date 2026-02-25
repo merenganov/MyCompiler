@@ -1,9 +1,16 @@
 import tkinter as tk
 from tkinter import ttk
 
+
 class Panels:
+    # Paleta tipo VS Code (por defecto)
+    BG = "#1e1e1e"
+    FG = "#d4d4d4"
+    SELECT_BG = "#264f78"
+    CURSOR = "#ffffff"
+
     def __init__(self, parent):
-        # Layout: izquierda editor, derecha resultados; abajo errores/ejecución
+        # Layout: arriba (explorador + editor + resultados); abajo (errores/ejecución)
         self.main_pane = ttk.Panedwindow(parent, orient=tk.VERTICAL)
         self.main_pane.pack(fill=tk.BOTH, expand=True)
 
@@ -13,7 +20,12 @@ class Panels:
         self.main_pane.add(self.top_pane, weight=4)
         self.main_pane.add(self.bottom_pane, weight=2)
 
-        # --- contenedor del editor (lo llena ide_window)
+        # --- explorador (izquierda)
+        self.explorer_container = ttk.Frame(self.top_pane)
+        self.top_pane.add(self.explorer_container, weight=1)
+        self._build_explorer(self.explorer_container)
+
+        # --- contenedor del editor (centro)
         self.editor_container = ttk.Frame(self.top_pane)
         self.top_pane.add(self.editor_container, weight=3)
 
@@ -36,16 +48,42 @@ class Panels:
         self.err_sem = self._make_readonly_tab(self.bottom_pane, "Errores Semánticos")
         self.exec_out = self._make_readonly_tab(self.bottom_pane, "Ejecución")
 
+    # ---------------- EXPLORER ----------------
+
+    def _build_explorer(self, parent):
+        header = ttk.Label(parent, text="EXPLORADOR DE PROYECTO")
+        header.pack(anchor="w", padx=8, pady=(6, 2))
+
+        self.project_tree = ttk.Treeview(parent, show="tree")
+        self.project_tree.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+
+    # ---------------- TABS TEXT ----------------
+
     def _make_readonly_tab(self, notebook, title: str):
         frame = ttk.Frame(notebook)
         notebook.add(frame, text=title)
 
-        text = tk.Text(frame, wrap="word")
+        text = tk.Text(
+            frame,
+            wrap="none",
+            bg=self.BG,
+            fg=self.FG,
+            insertbackground=self.CURSOR,
+            selectbackground=self.SELECT_BG,
+            relief="flat",
+            borderwidth=0
+        )
+
+        try:
+            text.configure(font=("Consolas", 10))
+        except Exception:
+            pass
+
         text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        scroll = ttk.Scrollbar(frame, command=text.yview)
-        scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        text.config(yscrollcommand=scroll.set)
+        scroll_y = ttk.Scrollbar(frame, command=text.yview)
+        scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+        text.config(yscrollcommand=scroll_y.set)
 
         text.config(state="disabled")
         return text
@@ -55,3 +93,17 @@ class Panels:
         widget.delete("1.0", "end")
         widget.insert("end", content)
         widget.config(state="disabled")
+
+    # ---------------- THEME SUPPORT ----------------
+
+    def apply_text_theme(self, bg, fg, cursor, select_bg):
+        for widget in [
+            self.lexico, self.sintactico, self.semantico, self.intermedio, self.simbolos,
+            self.err_lex, self.err_sin, self.err_sem, self.exec_out
+        ]:
+            widget.configure(
+                bg=bg,
+                fg=fg,
+                insertbackground=cursor,
+                selectbackground=select_bg
+            )
