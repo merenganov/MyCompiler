@@ -74,15 +74,37 @@ class IDEWindow:
         if hasattr(self.panels, "project_tree"):
             self.panels.project_tree.bind("<Double-1>", self._on_tree_open)
 
-        # ===== ACTIONS (mínimo: tema) =====
+        # ===== ACTIONS (TODO FUNCIONAL) =====
         actions.update({
+            # Archivo
+            "new": self.file_manager.new_file,
+            "open": self.file_manager.open_file,
+            "open_project": (lambda: self.file_manager.open_project_folder(self.panels.project_tree))
+            if hasattr(self.panels, "project_tree") else (lambda: None),
+            "close": self.file_manager.close_file,
+            "save": self.file_manager.save,
+            "save_as": self.file_manager.save_as,
+            "exit": self.file_manager.exit_app,
+
+            # Compilar (placeholders por ahora)
+            "compile_lex": self._ui_compile_lex,
+            "compile_syn": self._ui_compile_syn,
+            "compile_sem": self._ui_compile_sem,
+            "compile_ir": self._ui_compile_ir,
+
+            # Ejecutar / Pausar / Detener
+            "run": self._ui_run,
+            "pause": self._ui_pause,
+            "stop": self._ui_stop,
+
+            # Tema
             "toggle_theme": self.toggle_theme,
         })
 
-        # ===== MENÚ (si tu menu.py requiere otras acciones, hay que ajustarlo) =====
+        # ===== MENÚ =====
         self.root.config(menu=IDEMenu(self.root, actions).build())
 
-        # ===== TOOLBAR (solo botón tema) =====
+        # ===== TOOLBAR =====
         self.toolbar = Toolbar(self.top_container, actions)
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
 
@@ -90,7 +112,7 @@ class IDEWindow:
         self.apply_theme_to_widgets()
         self._update_title()
 
-        # ===== FORZAR ACTUALIZACIÓN DEL STATUS (garantiza que se vea) =====
+        # ===== FORZAR ACTUALIZACIÓN DEL STATUS =====
         self.root.after(50, self._update_cursor_status)
 
     # ====================================================
@@ -212,15 +234,15 @@ class IDEWindow:
             dline = self.text_area.dlineinfo(f"{line}.0")
             if dline:
                 y = dline[1]
-                self.line_numbers.create_text(46, y, anchor="ne", text=str(line), fill=line_color)
+                self.line_numbers.create_text(
+                    46, y, anchor="ne", text=str(line), fill=line_color
+                )
 
     # ====================================================
     # ============== FILE CALLBACKS ======================
     # ====================================================
 
     def _after_file_change(self, status: str):
-        # Aquí podemos mostrar mensajes en status si quieres,
-        # pero por ahora dejamos Ln/Col siempre visible.
         self._update_title()
         self._redraw_line_numbers()
         self._update_cursor_status()
@@ -270,3 +292,11 @@ class IDEWindow:
     def _ui_run(self):
         self.panels.bottom_pane.select(3)
         self.panels.set_text(self.panels.exec_out, "Ejecución (placeholder)\n")
+
+    def _ui_pause(self):
+        self.panels.bottom_pane.select(3)
+        self.panels.set_text(self.panels.exec_out, "⏸ Pausa (placeholder)\n")
+
+    def _ui_stop(self):
+        self.panels.bottom_pane.select(3)
+        self.panels.set_text(self.panels.exec_out, "⏹ Detener (placeholder)\n")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from tkinter import filedialog, messagebox
+
 from .state import IDEState
 
 
@@ -10,18 +11,15 @@ class FileManager:
         """
         editor_text_widget: widget Text del editor
         root: ventana principal
-        on_after_change: callback para refrescar UI (título, líneas, etc.)
+        on_after_change: callback para refrescar UI (título, status, etc.)
         """
         self.state = state
         self.editor = editor_text_widget
         self.root = root
         self.on_after_change = on_after_change
 
-        # Para explorador de proyecto
-        self.project_root: str | None = None
-
     # ====================================================
-    # ================== CONFIRMACIONES ==================
+    # ============== Helpers / Confirmaciones ============
     # ====================================================
 
     def confirm_discard_or_save(self) -> bool:
@@ -39,14 +37,18 @@ class FileManager:
             return self.save()
         return True
 
+    def _set_editor_content(self, content: str):
+        self.editor.delete("1.0", "end")
+        self.editor.insert("end", content)
+
     # ====================================================
-    # =================== ARCHIVO ACTUAL =================
+    # =================== Archivo ========================
     # ====================================================
 
     def new_file(self):
         if not self.confirm_discard_or_save():
             return
-        self.editor.delete("1.0", "end")
+        self._set_editor_content("")
         self.state.current_file = None
         self.state.is_dirty = False
         self.on_after_change(status="Nuevo archivo")
@@ -54,46 +56,34 @@ class FileManager:
     def close_file(self):
         if not self.confirm_discard_or_save():
             return
-        self.editor.delete("1.0", "end")
+        self._set_editor_content("")
         self.state.current_file = None
         self.state.is_dirty = False
         self.on_after_change(status="Archivo cerrado")
 
-    # --- Abrir desde diálogo (lo que ya tenías) ---
     def open_file(self):
-        self.open_file_dialog()
-
-    def open_file_dialog(self):
         if not self.confirm_discard_or_save():
             return
 
         path = filedialog.askopenfilename(
+            title="Abrir archivo",
             filetypes=[("Archivos de texto", "*.txt"), ("Todos los archivos", "*.*")]
         )
         if not path:
             return
+
         self.open_file_path(path)
 
-    # --- Abrir por ruta (para el explorador) ---
     def open_file_path(self, path: str):
-        if not self.confirm_discard_or_save():
-            return
-
-        if not os.path.isfile(path):
-            messagebox.showerror("Error", f"No es un archivo válido:\n{path}")
-            return
-
+        """Abre un archivo por ruta (usado por el explorador)."""
         try:
             with open(path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            self.editor.delete("1.0", "end")
-            self.editor.insert("end", content)
-
+            self._set_editor_content(content)
             self.state.current_file = path
             self.state.is_dirty = False
             self.on_after_change(status=f"Abierto: {path}")
-
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo abrir el archivo:\n{e}")
 
@@ -104,6 +94,7 @@ class FileManager:
         try:
             with open(self.state.current_file, "w", encoding="utf-8") as f:
                 f.write(self.editor.get("1.0", "end-1c"))
+
             self.state.is_dirty = False
             self.on_after_change(status=f"Guardado: {self.state.current_file}")
             return True
@@ -113,6 +104,7 @@ class FileManager:
 
     def save_as(self) -> bool:
         path = filedialog.asksaveasfilename(
+            title="Guardar como",
             defaultextension=".txt",
             filetypes=[("Archivos de texto", "*.txt"), ("Todos los archivos", "*.*")]
         )
@@ -128,41 +120,57 @@ class FileManager:
         self.root.quit()
 
     # ====================================================
-    # ============== EXPLORADOR DE PROYECTO ===============
+    # ================= Proyecto (Treeview) ==============
     # ====================================================
 
     def open_project_folder(self, treeview):
         """
-        Abre una carpeta y la carga en el Treeview.
-        treeview: ttk.Treeview del explorador.
+        Selecciona una carpeta y la carga en el TreeView.
+        Cada nodo guarda su ruta en values=(full_path,).
+        IDEWindow abre con open_file_path() cuando es archivo.
         """
-        folder = filedialog.askdirectory()
+        folder = filedialog.askdirectory(title="Selecciona una carpeta de proyecto")
         if not folder:
             return
 
-        self.project_root = folder
-        self._load_folder_into_tree(treeview, folder)
-        self.on_after_change(status=f"Proyecto: {folder}")
+        # Limpiar tree
+        for item in treeview.get_children():
+            treeview.delete(item)
 
-    def _load_folder_into_tree(self, treeview, folder: str):
-        treeview.delete(*treeview.get_children())
+        root_node = treeview.insert(
+            "",
+            "end",
+            text=os.path.basename(folder) or folder,
+            values=(folder,),
+            open=True
+        )
 
-        root_name = os.path.basename(folder.rstrip("/\\"))
-        root_id = treeview.insert("", "end", text=root_name, open=True, values=(folder,))
-        self._insert_tree_nodes(treeview, root_id, folder)
+        ignore = {"__pycache__", ".git", ".venv", "venv", "node_modules"}
 
-    def _insert_tree_nodes(self, treeview, parent_id, path: str):
-        try:
-            entries = sorted(os.listdir(path))
-        except Exception:
-            return
+        def insert_nodes(parent_id, parent_path):
+            try:
+                entries = sorted(os.listdir(parent_path))
+            except Exception:
+                return
 
-        for name in entries:
-            if name.startswith(".") or name == "__pycache__":
-                continue
+            for name in entries:
+                if name in ignore:
+                    continue
 
-            full = os.path.join(path, name)
+                full = os.path.join(parent_path, name)
 
-            node_id = treeview.insert(parent_id, "end", text=name, open=False, values=(full,))
-            if os.path.isdir(full):
-                self._insert_tree_nodes(treeview, node_id, full)
+                # Insertar nodo
+                node_id = treeview.insert(
+                    parent_id,
+                    "end",
+                    text=name,
+                    values=(full,)
+                )
+
+                # Si es carpeta, cargar hijos
+                if os.path.isdir(full):
+                    insert_nodes(node_id, full)
+
+        insert_nodes(root_node, folder)
+
+        self.on_after_change(status=f"Proyecto abierto: {folder}")
