@@ -51,11 +51,35 @@ class Panels:
     # ---------------- EXPLORER ----------------
 
     def _build_explorer(self, parent):
+        # ===== Título =====
         header = ttk.Label(parent, text="EXPLORADOR DE PROYECTO")
         header.pack(anchor="w", padx=8, pady=(6, 2))
 
-        self.project_tree = ttk.Treeview(parent, show="tree")
-        self.project_tree.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+        # ===== Contenedor del árbol =====
+        tree_frame = ttk.Frame(parent)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+
+        # ===== Treeview =====
+        # Guardamos la ruta completa en columna oculta
+        self.project_tree = ttk.Treeview(
+            tree_frame,
+            show="tree",
+            columns=("fullpath",)
+        )
+
+        # Ocultamos la columna donde guardamos la ruta real
+        self.project_tree.column("fullpath", width=0, stretch=False)
+
+        self.project_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # ===== Scrollbar =====
+        scroll_y = ttk.Scrollbar(tree_frame, orient="vertical", command=self.project_tree.yview)
+        scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.project_tree.configure(yscrollcommand=scroll_y.set)
+
+        # ===== Configuración opcional estilo =====
+        self.project_tree.configure(selectmode="browse")
 
     # ---------------- TABS TEXT ----------------
 

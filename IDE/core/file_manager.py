@@ -18,6 +18,12 @@ class FileManager:
         self.root = root
         self.on_after_change = on_after_change
 
+        # NUEVO: raíz del proyecto abierto para refrescar explorer
+        self.project_root: str | None = None
+
+        # Carpetas a ignorar
+        self.ignore = {"__pycache__", ".git", ".venv", "venv", "node_modules"}
+
     # ====================================================
     # ============== Helpers / Confirmaciones ============
     # ====================================================
@@ -127,11 +133,24 @@ class FileManager:
         """
         Selecciona una carpeta y la carga en el TreeView.
         Cada nodo guarda su ruta en values=(full_path,).
-        IDEWindow abre con open_file_path() cuando es archivo.
         """
         folder = filedialog.askdirectory(title="Selecciona una carpeta de proyecto")
         if not folder:
             return
+
+        self.project_root = folder
+        self.refresh_project_tree(treeview)
+        self.on_after_change(status=f"Proyecto abierto: {folder}")
+
+    def refresh_project_tree(self, treeview):
+        """
+        Refresca todo el TreeView basado en self.project_root.
+        (Simula lo que hace VSCode al actualizar el explorador)
+        """
+        if not self.project_root:
+            return
+
+        folder = self.project_root
 
         # Limpiar tree
         for item in treeview.get_children():
@@ -145,32 +164,34 @@ class FileManager:
             open=True
         )
 
-        ignore = {"__pycache__", ".git", ".venv", "venv", "node_modules"}
+        self._insert_nodes(treeview, root_node, folder)
 
-        def insert_nodes(parent_id, parent_path):
-            try:
-                entries = sorted(os.listdir(parent_path))
-            except Exception:
-                return
+    def _insert_nodes(self, treeview, parent_id, parent_path):
+        try:
+            entries = os.listdir(parent_path)
+        except Exception:
+            return
 
-            for name in entries:
-                if name in ignore:
-                    continue
+        # Orden: primero carpetas luego archivos
+        entries = sorted(
+            entries,
+            key=lambda name: (os.path.isfile(os.path.join(parent_path, name)), name.lower())
+        )
 
-                full = os.path.join(parent_path, name)
+        for name in entries:
+            if name in self.ignore:
+                continue
 
-                # Insertar nodo
-                node_id = treeview.insert(
-                    parent_id,
-                    "end",
-                    text=name,
-                    values=(full,)
-                )
+            full = os.path.join(parent_path, name)
 
-                # Si es carpeta, cargar hijos
-                if os.path.isdir(full):
-                    insert_nodes(node_id, full)
+            # Insertar nodo guardando fullpath
+            node_id = treeview.insert(
+                parent_id,
+                "end",
+                text=name,
+                values=(full,)
+            )
 
-        insert_nodes(root_node, folder)
-
-        self.on_after_change(status=f"Proyecto abierto: {folder}")
+            # Si es carpeta, cargar hijos
+            if os.path.isdir(full):
+                self._insert_nodes(treeview, node_id, full)

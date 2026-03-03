@@ -241,10 +241,33 @@ class IDEWindow:
     # ============== FILE CALLBACKS ======================
     # ====================================================
 
+    def _refresh_project_explorer_if_needed(self):
+        """
+        Refresca el explorador SOLO si:
+          - existe project_tree
+          - hay un proyecto abierto en file_manager.project_root
+          - existe el método refresh_project_tree en FileManager
+        """
+        if not hasattr(self.panels, "project_tree"):
+            return
+        if not getattr(self.file_manager, "project_root", None):
+            return
+        if not hasattr(self.file_manager, "refresh_project_tree"):
+            return
+
+        try:
+            self.file_manager.refresh_project_tree(self.panels.project_tree)
+        except Exception:
+            # Si algo falla, no rompemos el IDE
+            pass
+
     def _after_file_change(self, status: str):
         self._update_title()
         self._redraw_line_numbers()
         self._update_cursor_status()
+
+        # ✅ NUEVO: refrescar explorador (para que se "actualice" como VSCode)
+        self._refresh_project_explorer_if_needed()
 
     def _update_title(self):
         name = self.state.current_file if self.state.current_file else "Nuevo Archivo"
