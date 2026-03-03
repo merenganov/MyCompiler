@@ -9,20 +9,35 @@ class Toolbar(ttk.Frame):
       - run, pause, stop (pueden ser placeholders)
       - toggle_theme
       - (opcional) new, open, save
+      - compile_lex, compile_syn, compile_sem, compile_ir
     """
 
     def __init__(self, parent, actions: dict):
         super().__init__(parent)
         self.actions = actions
 
-        # Estilo: botoncitos compactos
+        # =======================
+        # Archivo
+        # =======================
         self._icon_btn("📄", "new", tooltip="Nuevo")
         self._icon_btn("📂", "open", tooltip="Abrir")
         self._icon_btn("💾", "save", tooltip="Guardar")
 
         self._sep()
 
+        # =======================
+        # Compilación (NUEVO)
+        # =======================
+        self._text_btn_left("Léxico", "compile_lex", tooltip="Análisis Léxico")
+        self._text_btn_left("Sintáctico", "compile_syn", tooltip="Análisis Sintáctico")
+        self._text_btn_left("Semántico", "compile_sem", tooltip="Análisis Semántico")
+        self._text_btn_left("Intermedio", "compile_ir", tooltip="Código Intermedio")
+
+        self._sep()
+
+        # =======================
         # Ejecutar / Pausar / Detener
+        # =======================
         self._icon_btn("▶", "run", tooltip="Ejecutar")
         self._icon_btn("⏸", "pause", tooltip="Pausar")
         self._icon_btn("⏹", "stop", tooltip="Detener")
@@ -53,6 +68,17 @@ class Toolbar(ttk.Frame):
         cmd = self.actions.get(key)
         state = tk.NORMAL if callable(cmd) else tk.DISABLED
         ttk.Button(self, text=text, command=cmd, state=state).pack(side=tk.RIGHT, padx=6, pady=2)
+
+    # ✅ NUEVO: botón de texto alineado a la izquierda (sin afectar el botón de la derecha)
+    def _text_btn_left(self, text: str, key: str, tooltip: str = ""):
+        cmd = self.actions.get(key)
+        state = tk.NORMAL if callable(cmd) else tk.DISABLED
+
+        b = ttk.Button(self, text=text, command=cmd, state=state)
+        b.pack(side=tk.LEFT, padx=2, pady=2)
+
+        if tooltip:
+            self._add_tooltip(b, tooltip)
 
     # Tooltip simple
     def _add_tooltip(self, widget, text: str):

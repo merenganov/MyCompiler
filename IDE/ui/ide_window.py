@@ -7,6 +7,7 @@ from core.file_manager import FileManager
 from ui.menu import IDEMenu
 from ui.toolbar import Toolbar
 from ui.panels import Panels
+from core.symbol_table import SymbolTable
 
 
 class IDEWindow:
@@ -86,10 +87,10 @@ class IDEWindow:
             "save_as": self.file_manager.save_as,
             "exit": self.file_manager.exit_app,
 
-            # Compilar (placeholders por ahora)
+            # Compilar
             "compile_lex": self._ui_compile_lex,
             "compile_syn": self._ui_compile_syn,
-            "compile_sem": self._ui_compile_sem,
+            "compile_sem": self._ui_compile_sem,   # <- aquí ya hace tabla de símbolos
             "compile_ir": self._ui_compile_ir,
 
             # Ejecutar / Pausar / Detener
@@ -234,9 +235,7 @@ class IDEWindow:
             dline = self.text_area.dlineinfo(f"{line}.0")
             if dline:
                 y = dline[1]
-                self.line_numbers.create_text(
-                    46, y, anchor="ne", text=str(line), fill=line_color
-                )
+                self.line_numbers.create_text(46, y, anchor="ne", text=str(line), fill=line_color)
 
     # ====================================================
     # ============== FILE CALLBACKS ======================
@@ -282,8 +281,53 @@ class IDEWindow:
         self.panels.set_text(self.panels.sintactico, "Resultado Sintáctico (placeholder)\n")
 
     def _ui_compile_sem(self):
-        self.panels.results_notebook.select(2)
-        self.panels.set_text(self.panels.semantico, "Resultado Semántico (placeholder)\n")
+        """
+        Análisis semántico SIMULADO:
+        - Detecta declaraciones simples:  int x;  float y;
+        - Construye tabla de símbolos y la muestra en la pestaña 'Símbolos'
+        """
+        code = self.text_area.get("1.0", "end-1c")
+        lines = code.splitlines()
+
+        table = SymbolTable()
+        errors = []
+
+        for i, raw in enumerate(lines, start=1):
+            line = raw.strip()
+
+            # Ignorar líneas vacías / comentarios simples
+            if not line or line.startswith("//"):
+                continue
+
+            # Declaraciones: int x;  float y;
+            if line.startswith("int ") or line.startswith("float "):
+                try:
+                    parts = line.replace(";", "").split()
+                    if len(parts) < 2:
+                        raise Exception(f"Línea {i}: declaración incompleta")
+
+                    type_ = parts[0]
+                    name = parts[1]
+                    table.declare(name, type_)
+                except Exception as e:
+                    errors.append(str(e))
+
+        # Mostrar resultado semántico
+        if errors:
+            self.panels.set_text(self.panels.semantico, "Errores:\n" + "\n".join(errors) + "\n")
+        else:
+            self.panels.set_text(self.panels.semantico, "Análisis semántico correcto ✅\n")
+
+        # Mostrar tabla de símbolos en pestaña 'Símbolos'
+        symbols_text = "Nombre\tTipo\tValor\n"
+        symbols_text += "-" * 40 + "\n"
+        for name, data in table.get_all().items():
+            symbols_text += f"{name}\t{data['type']}\t{data['value']}\n"
+
+        self.panels.set_text(self.panels.simbolos, symbols_text)
+
+        # Cambiar a pestaña 'Símbolos' para ver la tabla
+        self.panels.results_notebook.select(4)
 
     def _ui_compile_ir(self):
         self.panels.results_notebook.select(3)
