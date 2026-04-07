@@ -4,6 +4,8 @@ from tkinter import ttk, font
 
 from core.state import IDEState
 from core.file_manager import FileManager
+from core.lexical_error import LexicalError
+from core.lexer import Lexer
 from ui.menu import IDEMenu
 from ui.toolbar import Toolbar
 from ui.panels import Panels
@@ -41,9 +43,7 @@ class IDEWindow:
         self.state = IDEState()
         actions = {}
 
-        # =========================================================
-        # CONTENEDORES: TOP (toolbar), CENTER (panels), BOTTOM (status)
-        # =========================================================
+        # Contenedores principales: top (toolbar), center (panels), bottom (status)
         self.top_container = ttk.Frame(self.root)
         self.top_container.pack(side=tk.TOP, fill=tk.X)
 
@@ -53,17 +53,17 @@ class IDEWindow:
         self.center_container = ttk.Frame(self.root)
         self.center_container.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        # ===== STATUS BAR (BOTTOM_CONTAINER) =====
+        # Status bar
         self.status = ttk.Label(self.bottom_container, text="Ln 1, Col 1", anchor="e")
         self.status.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=8)
 
-        # ===== PANELS (CENTER) =====
+        # Panels
         self.panels = Panels(self.center_container)
 
-        # ===== EDITOR =====
+        # Editor
         self._build_editor(self.panels.editor_container)
 
-        # ===== FILE MANAGER =====
+        # File manager
         self.file_manager = FileManager(
             state=self.state,
             editor_text_widget=self.text_area,
@@ -71,11 +71,11 @@ class IDEWindow:
             on_after_change=self._after_file_change
         )
 
-        # ===== EXPLORADOR (doble clic abre) =====
+        # Explorador
         if hasattr(self.panels, "project_tree"):
             self.panels.project_tree.bind("<Double-1>", self._on_tree_open)
 
-        # ===== ACTIONS (TODO FUNCIONAL) =====
+        # Acciones
         actions.update({
             # Archivo
             "new": self.file_manager.new_file,
@@ -90,7 +90,7 @@ class IDEWindow:
             # Compilar
             "compile_lex": self._ui_compile_lex,
             "compile_syn": self._ui_compile_syn,
-            "compile_sem": self._ui_compile_sem,   # <- aquí ya hace tabla de símbolos
+            "compile_sem": self._ui_compile_sem,
             "compile_ir": self._ui_compile_ir,
 
             # Ejecutar / Pausar / Detener
@@ -102,22 +102,22 @@ class IDEWindow:
             "toggle_theme": self.toggle_theme,
         })
 
-        # ===== MENÚ =====
+        # Menú
         self.root.config(menu=IDEMenu(self.root, actions).build())
 
-        # ===== TOOLBAR =====
+        # Toolbar
         self.toolbar = Toolbar(self.top_container, actions)
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
 
-        # ===== TEMA INICIAL =====
+        # Tema inicial
         self.apply_theme_to_widgets()
         self._update_title()
 
-        # ===== FORZAR ACTUALIZACIÓN DEL STATUS =====
+        # Forzar actualización inicial del status
         self.root.after(50, self._update_cursor_status)
 
     # ====================================================
-    # =================== THEME ==========================
+    # THEME
     # ====================================================
 
     def toggle_theme(self):
@@ -148,7 +148,7 @@ class IDEWindow:
             )
 
     # ====================================================
-    # =================== EDITOR =========================
+    # EDITOR
     # ====================================================
 
     def _build_editor(self, parent):
@@ -178,7 +178,7 @@ class IDEWindow:
         self.text_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll.config(command=self._on_scroll)
 
-        # Eventos para mantener status actualizado
+        # Eventos para mantener actualizado el estado del editor
         self.text_area.bind("<<Modified>>", self._on_modified)
         self.text_area.bind("<KeyRelease>", self._on_cursor_move)
         self.text_area.bind("<KeyPress>", self._on_cursor_move)
@@ -238,15 +238,15 @@ class IDEWindow:
                 self.line_numbers.create_text(46, y, anchor="ne", text=str(line), fill=line_color)
 
     # ====================================================
-    # ============== FILE CALLBACKS ======================
+    # FILE CALLBACKS
     # ====================================================
 
     def _refresh_project_explorer_if_needed(self):
         """
-        Refresca el explorador SOLO si:
-          - existe project_tree
-          - hay un proyecto abierto en file_manager.project_root
-          - existe el método refresh_project_tree en FileManager
+        Refresca el explorador solo si:
+        - existe project_tree
+        - hay un proyecto abierto en file_manager.project_root
+        - existe el método refresh_project_tree en FileManager
         """
         if not hasattr(self.panels, "project_tree"):
             return
@@ -258,15 +258,12 @@ class IDEWindow:
         try:
             self.file_manager.refresh_project_tree(self.panels.project_tree)
         except Exception:
-            # Si algo falla, no rompemos el IDE
             pass
 
     def _after_file_change(self, status: str):
         self._update_title()
         self._redraw_line_numbers()
         self._update_cursor_status()
-
-        # ✅ NUEVO: refrescar explorador (para que se "actualice" como VSCode)
         self._refresh_project_explorer_if_needed()
 
     def _update_title(self):
@@ -275,7 +272,7 @@ class IDEWindow:
         self.root.title(f"IDE - {name}{star}")
 
     # ====================================================
-    # ============== EXPLORADOR EVENTS ===================
+    # EXPLORADOR EVENTS
     # ====================================================
 
     def _on_tree_open(self, event=None):
@@ -292,22 +289,55 @@ class IDEWindow:
             self.file_manager.open_file_path(path)
 
     # ====================================================
-    # ============== UI PLACEHOLDERS =====================
+    # UI ACTIONS
     # ====================================================
 
     def _ui_compile_lex(self):
-        self.panels.results_notebook.select(0)
-        self.panels.set_text(self.panels.lexico, "Resultado Léxico (placeholder)\n")
+        code = self.text_area.get("1.0", "end-1c")
+
+        self.panels.set_text(self.panels.lexico, "")
+        self.panels.set_text(self.panels.err_lex, "")
+
+        try:
+            lexer = Lexer(code)
+            tokens = lexer.tokenize()
+
+            lines = []
+            lines.append("TIPO            LEXEMA              LINEA   COLUMNA")
+            lines.append("-" * 60)
+
+            for token in tokens:
+                lines.append(
+                    f"{token.token_type.name:<15} "
+                    f"{token.lexeme!r:<18} "
+                    f"{token.line:<7} "
+                    f"{token.column}"
+                )
+
+            result_text = "\n".join(lines) + "\n"
+
+            self.panels.results_notebook.select(0)
+            self.panels.set_text(self.panels.lexico, result_text)
+
+            self.panels.bottom_pane.select(0)
+            self.panels.set_text(self.panels.err_lex, "Sin errores lexicos.\n")
+
+        except LexicalError as error:
+            self.panels.results_notebook.select(0)
+            self.panels.set_text(self.panels.lexico, "")
+
+            self.panels.bottom_pane.select(0)
+            self.panels.set_text(self.panels.err_lex, str(error) + "\n")
 
     def _ui_compile_syn(self):
         self.panels.results_notebook.select(1)
-        self.panels.set_text(self.panels.sintactico, "Resultado Sintáctico (placeholder)\n")
+        self.panels.set_text(self.panels.sintactico, "Resultado Sintactico (placeholder)\n")
 
     def _ui_compile_sem(self):
         """
-        Análisis semántico SIMULADO:
-        - Detecta declaraciones simples:  int x;  float y;
-        - Construye tabla de símbolos y la muestra en la pestaña 'Símbolos'
+        Analisis semantico simulado:
+        - Detecta declaraciones simples: int x; float y;
+        - Construye tabla de simbolos y la muestra en la pestaña 'Simbolos'
         """
         code = self.text_area.get("1.0", "end-1c")
         lines = code.splitlines()
@@ -318,16 +348,14 @@ class IDEWindow:
         for i, raw in enumerate(lines, start=1):
             line = raw.strip()
 
-            # Ignorar líneas vacías / comentarios simples
             if not line or line.startswith("//"):
                 continue
 
-            # Declaraciones: int x;  float y;
             if line.startswith("int ") or line.startswith("float "):
                 try:
                     parts = line.replace(";", "").split()
                     if len(parts) < 2:
-                        raise Exception(f"Línea {i}: declaración incompleta")
+                        raise Exception(f"Linea {i}: declaracion incompleta")
 
                     type_ = parts[0]
                     name = parts[1]
@@ -335,35 +363,31 @@ class IDEWindow:
                 except Exception as e:
                     errors.append(str(e))
 
-        # Mostrar resultado semántico
         if errors:
             self.panels.set_text(self.panels.semantico, "Errores:\n" + "\n".join(errors) + "\n")
         else:
-            self.panels.set_text(self.panels.semantico, "Análisis semántico correcto ✅\n")
+            self.panels.set_text(self.panels.semantico, "Analisis semantico correcto.\n")
 
-        # Mostrar tabla de símbolos en pestaña 'Símbolos'
         symbols_text = "Nombre\tTipo\tValor\n"
         symbols_text += "-" * 40 + "\n"
         for name, data in table.get_all().items():
             symbols_text += f"{name}\t{data['type']}\t{data['value']}\n"
 
         self.panels.set_text(self.panels.simbolos, symbols_text)
-
-        # Cambiar a pestaña 'Símbolos' para ver la tabla
         self.panels.results_notebook.select(4)
 
     def _ui_compile_ir(self):
         self.panels.results_notebook.select(3)
-        self.panels.set_text(self.panels.intermedio, "Código Intermedio (placeholder)\n")
+        self.panels.set_text(self.panels.intermedio, "Codigo Intermedio (placeholder)\n")
 
     def _ui_run(self):
         self.panels.bottom_pane.select(3)
-        self.panels.set_text(self.panels.exec_out, "Ejecución (placeholder)\n")
+        self.panels.set_text(self.panels.exec_out, "Ejecucion (placeholder)\n")
 
     def _ui_pause(self):
         self.panels.bottom_pane.select(3)
-        self.panels.set_text(self.panels.exec_out, "⏸ Pausa (placeholder)\n")
+        self.panels.set_text(self.panels.exec_out, "Pausa (placeholder)\n")
 
     def _ui_stop(self):
         self.panels.bottom_pane.select(3)
-        self.panels.set_text(self.panels.exec_out, "⏹ Detener (placeholder)\n")
+        self.panels.set_text(self.panels.exec_out, "Detener (placeholder)\n")
