@@ -24,6 +24,7 @@ class TokenType(Enum):
     MINUS = auto()
     STAR = auto()
     SLASH = auto()
+    MODULO = auto()
     ASSIGN = auto()
     EQUAL = auto()
     NOT_EQUAL = auto()
@@ -31,6 +32,14 @@ class TokenType(Enum):
     LESS_EQUAL = auto()
     GREATER = auto()
     GREATER_EQUAL = auto()
+    
+    #Operadores logicos
+    AND = auto()
+    OR = auto()
+    NOT = auto()
+    
+    STRING = auto()
+    CHAR = auto()
 
     # Delimitadores.
     LPAREN = auto()
