@@ -4,7 +4,6 @@ from tkinter import ttk, font
 
 from core.state import IDEState
 from core.file_manager import FileManager
-from core.lexical_error import LexicalError
 from core.lexer import Lexer
 from ui.menu import IDEMenu
 from ui.toolbar import Toolbar
@@ -295,39 +294,74 @@ class IDEWindow:
     def _ui_compile_lex(self):
         code = self.text_area.get("1.0", "end-1c")
 
+        # Limpiar paneles
         self.panels.set_text(self.panels.lexico, "")
         self.panels.set_text(self.panels.err_lex, "")
 
         try:
-            lexer = Lexer(code)
-            tokens = lexer.tokenize()
-
-            lines = []
-            lines.append("TIPO            LEXEMA              LINEA   COLUMNA")
-            lines.append("-" * 60)
-
-            for token in tokens:
-                lines.append(
-                    f"{token.token_type.name:<15} "
-                    f"{token.lexeme!r:<18} "
-                    f"{token.line:<7} "
-                    f"{token.column}"
-                )
-
-            result_text = "\n".join(lines) + "\n"
-
-            self.panels.results_notebook.select(0)
-            self.panels.set_text(self.panels.lexico, result_text)
-
-            self.panels.bottom_pane.select(0)
-            self.panels.set_text(self.panels.err_lex, "Sin errores lexicos.\n")
-
-        except LexicalError as error:
+            result = Lexer(code).tokenize()
+        except Exception as e:
             self.panels.results_notebook.select(0)
             self.panels.set_text(self.panels.lexico, "")
-
             self.panels.bottom_pane.select(0)
-            self.panels.set_text(self.panels.err_lex, str(error) + "\n")
+            self.panels.set_text(self.panels.err_lex, f"Error al ejecutar el lexer:\n{e}\n")
+            return
+
+        # Soportar ambos casos:
+        # 1) lexer devuelve (tokens, errors)
+        # 2) lexer devuelve solo tokens
+        if isinstance(result, tuple) and len(result) == 2:
+            tokens, errors = result
+        else:
+            tokens = result
+            errors = []
+
+        # ---------- Formato de tokens ----------
+        token_lines = []
+        token_lines.append("TIPO\tLEXEMA\tLINEA\tCOLUMNA")
+        token_lines.append("-" * 60)
+
+        for token in tokens:
+            token_type = getattr(token, "token_type", getattr(token, "type", ""))
+            if hasattr(token_type, "name"):
+                token_type = token_type.name
+
+            lexeme = getattr(token, "lexeme", "")
+            line = getattr(token, "line", "")
+            column = getattr(token, "column", "")
+
+            token_lines.append(f"{token_type}\t{lexeme}\t{line}\t{column}")
+
+        if len(tokens) == 0:
+            tokens_text = "Sin tokens reconocidos.\n"
+        else:
+            tokens_text = "\n".join(token_lines) + "\n"
+
+        # ---------- Formato de errores ----------
+        error_lines = []
+
+        for error in errors:
+            message = getattr(error, "message", str(error))
+            line = getattr(error, "line", "")
+            column = getattr(error, "column", "")
+            char = getattr(error, "character", None)
+
+            if char is not None and char != "":
+                error_lines.append(f"{message} Línea: {line}, columna: {column}, carácter: {char!r}")
+            else:
+                error_lines.append(f"{message} Línea: {line}, columna: {column}")
+
+        if len(error_lines) == 0:
+            errors_text = "Sin errores léxicos.\n"
+        else:
+            errors_text = "\n".join(error_lines) + "\n"
+
+        # ---------- Mostrar ----------
+        self.panels.results_notebook.select(0)
+        self.panels.set_text(self.panels.lexico, tokens_text)
+
+        self.panels.bottom_pane.select(0)
+        self.panels.set_text(self.panels.err_lex, errors_text)
 
     def _ui_compile_syn(self):
         self.panels.results_notebook.select(1)

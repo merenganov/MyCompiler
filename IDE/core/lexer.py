@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from core.lexical_error import LexicalError
 from core.token_model import Token
@@ -36,45 +36,61 @@ class Lexer:
         else:
             self.column += 1
 
-    def tokenize(self) -> List[Token]:
+    def tokenize(self) -> Tuple[List[Token], List[LexicalError]]:
         tokens: List[Token] = []
+        errors: List[LexicalError] = []
 
         while self.current_char() is not None:
-            self.skip_ignored()
+            start_position = self.position
 
-            if self.current_char() is None:
-                break
+            try:
+                self.skip_ignored()
 
-            current = self.current_char()
+                if self.current_char() is None:
+                    break
 
-            if current.isalpha() or current == "_":
-                tokens.append(self.scan_identifier_or_keyword())
+                current = self.current_char()
+
+                if current.isalpha() or current == "_":
+                    tokens.append(self.scan_identifier_or_keyword())
+                    continue
+
+                if current.isdigit():
+                    tokens.append(self.scan_number())
+                    continue
+
+                if current == '"':
+                    tokens.append(self.scan_string())
+                    continue
+
+                if current == "'":
+                    tokens.append(self.scan_char())
+                    continue
+
+                if current == "." and self.peek() is not None and self.peek().isdigit():
+                    raise LexicalError(
+                        message="Número mal formado",
+                        line=self.line,
+                        column=self.column,
+                        character=".",
+                    )
+
+                tokens.append(self.scan_operator_or_delimiter())
+
+            except LexicalError as error:
+                errors.append(error)
+
+                # Recuperación para no quedarse atorado en el mismo carácter
+                if self.current_char() is None:
+                    break
+
+                if self.position == start_position:
+                    self.advance()
+
                 continue
-
-            if current.isdigit():
-                tokens.append(self.scan_number())
-                continue
-
-            if current == '"':
-                tokens.append(self.scan_string())
-                continue
-
-            if current == "'":
-                tokens.append(self.scan_char())
-                continue
-
-            if current == "." and self.peek() is not None and self.peek().isdigit():
-                raise LexicalError(
-                    message="Número mal formado",
-                    line=self.line,
-                    column=self.column,
-                    character=".",
-                )
-
-            tokens.append(self.scan_operator_or_delimiter())
 
         tokens.append(Token(TokenType.EOF, "", self.line, self.column))
-        return tokens
+        return tokens, errors
 
     def skip_ignored(self) -> None:
         while True:
@@ -199,7 +215,6 @@ class Lexer:
         start_column = self.column
 
         self.advance()
-
         lexeme_chars = []
 
         while self.current_char() is not None and self.current_char() != '"':
@@ -223,7 +238,6 @@ class Lexer:
             )
 
         self.advance()
-
         return Token(TokenType.STRING, "".join(lexeme_chars), start_line, start_column)
 
     def scan_char(self) -> Token:
@@ -231,7 +245,6 @@ class Lexer:
         start_column = self.column
 
         self.advance()
-
         current = self.current_char()
 
         if current is None or current == "\n":
@@ -284,7 +297,6 @@ class Lexer:
             )
 
         self.advance()
-
         return Token(TokenType.CHAR, value, start_line, start_column)
 
     def scan_operator_or_delimiter(self) -> Token:

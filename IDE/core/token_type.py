@@ -2,46 +2,66 @@ from enum import Enum, auto
 
 
 class TokenType(Enum):
-    # Identificadores y literales numéricos.
+    # =========================
+    # Identificadores y literales
+    # =========================
     IDENTIFIER = auto()
     INTEGER = auto()
     REAL = auto()
+    STRING = auto()
+    CHAR = auto()
 
-    # Palabras reservadas.
+    # =========================
+    # Palabras reservadas
+    # =========================
+    INT = auto()
+    FLOAT = auto()
+    REAL_TYPE = auto()   # para "real" (evita conflicto con REAL número)
+
     IF = auto()
     ELSE = auto()
-    WHILE = auto()
-    FOR = auto()
-    RETURN = auto()
-    FUNCTION = auto()
-    VAR = auto()
-    TRUE = auto()
-    FALSE = auto()
-    PRINT = auto()
+    THEN = auto()
+    END = auto()
 
-    # Operadores.
+    DO = auto()
+    WHILE = auto()
+    UNTIL = auto()
+
+    CIN = auto()
+    COUT = auto()
+
+    MAIN = auto()
+
+    # =========================
+    # Operadores aritméticos
+    # =========================
     PLUS = auto()
     MINUS = auto()
     STAR = auto()
     SLASH = auto()
     MODULO = auto()
-    ASSIGN = auto()
-    EQUAL = auto()
-    NOT_EQUAL = auto()
-    LESS = auto()
-    LESS_EQUAL = auto()
-    GREATER = auto()
-    GREATER_EQUAL = auto()
-    
-    #Operadores logicos
-    AND = auto()
-    OR = auto()
-    NOT = auto()
-    
-    STRING = auto()
-    CHAR = auto()
 
-    # Delimitadores.
+    # =========================
+    # Operadores relacionales
+    # =========================
+    ASSIGN = auto()        # =
+    EQUAL = auto()         # ==
+    NOT_EQUAL = auto()     # !=
+    LESS = auto()          # <
+    LESS_EQUAL = auto()    # <=
+    GREATER = auto()       # >
+    GREATER_EQUAL = auto() # >=
+
+    # =========================
+    # Operadores lógicos
+    # =========================
+    AND = auto()           # &&
+    OR = auto()            # ||
+    NOT = auto()           # !
+
+    # =========================
+    # Delimitadores
+    # =========================
     LPAREN = auto()
     RPAREN = auto()
     LBRACE = auto()
@@ -52,20 +72,34 @@ class TokenType(Enum):
     COMMA = auto()
     DOT = auto()
 
-    # Fin de archivo.
+    # =========================
+    # Fin de archivo
+    # =========================
     EOF = auto()
 
 
-# Mapa de palabras reservadas del lenguaje.
+# =========================
+# Palabras reservadas
+# =========================
 RESERVED_WORDS = {
+    # Tipos
+    "int": TokenType.INT,
+    "float": TokenType.FLOAT,
+    "real": TokenType.REAL_TYPE,
+
+    # Control
     "if": TokenType.IF,
     "else": TokenType.ELSE,
+    "then": TokenType.THEN,
+    "end": TokenType.END,
+    "do": TokenType.DO,
     "while": TokenType.WHILE,
-    "for": TokenType.FOR,
-    "return": TokenType.RETURN,
-    "function": TokenType.FUNCTION,
-    "var": TokenType.VAR,
-    "true": TokenType.TRUE,
-    "false": TokenType.FALSE,
-    "print": TokenType.PRINT,
+    "until": TokenType.UNTIL,
+
+    # Entrada / salida
+    "cin": TokenType.CIN,
+    "cout": TokenType.COUT,
+
+    # Programa
+    "main": TokenType.MAIN,
 }
