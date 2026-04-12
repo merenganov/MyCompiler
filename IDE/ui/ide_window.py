@@ -20,6 +20,16 @@ class IDEWindow:
             "line_fg": "#858585",
             "select_bg": "#264f78",
             "cursor": "#ffffff",
+            "syntax": {
+                "KEYWORD": "#569CD6",
+                "IDENTIFIER": "#D4D4D4",
+                "NUMBER": "#B5CEA8",
+                "STRING": "#CE9178",
+                "OPERATOR": "#C586C0",
+                "SYMBOL": "#DCDCAA",
+                "COMMENT": "#6A9955",
+                "ERROR": "#F44747",
+            }
         },
         "light": {
             "text_bg": "#ffffff",
@@ -28,6 +38,16 @@ class IDEWindow:
             "line_fg": "#666666",
             "select_bg": "#cce6ff",
             "cursor": "#000000",
+            "syntax": {
+                "KEYWORD": "#0000CC",
+                "IDENTIFIER": "#111111",
+                "NUMBER": "#098658",
+                "STRING": "#A31515",
+                "OPERATOR": "#AF00DB",
+                "SYMBOL": "#795E26",
+                "COMMENT": "#008000",
+                "ERROR": "#CC0000",
+            }
         }
     }
 
@@ -42,7 +62,7 @@ class IDEWindow:
         self.state = IDEState()
         actions = {}
 
-        # Contenedores principales: top (toolbar), center (panels), bottom (status)
+        # Contenedores principales
         self.top_container = ttk.Frame(self.root)
         self.top_container.pack(side=tk.TOP, fill=tk.X)
 
@@ -61,6 +81,7 @@ class IDEWindow:
 
         # Editor
         self._build_editor(self.panels.editor_container)
+        self._configure_syntax_tags()
 
         # File manager
         self.file_manager = FileManager(
@@ -76,7 +97,6 @@ class IDEWindow:
 
         # Acciones
         actions.update({
-            # Archivo
             "new": self.file_manager.new_file,
             "open": self.file_manager.open_file,
             "open_project": (lambda: self.file_manager.open_project_folder(self.panels.project_tree))
@@ -86,18 +106,15 @@ class IDEWindow:
             "save_as": self.file_manager.save_as,
             "exit": self.file_manager.exit_app,
 
-            # Compilar
             "compile_lex": self._ui_compile_lex,
             "compile_syn": self._ui_compile_syn,
             "compile_sem": self._ui_compile_sem,
             "compile_ir": self._ui_compile_ir,
 
-            # Ejecutar / Pausar / Detener
             "run": self._ui_run,
             "pause": self._ui_pause,
             "stop": self._ui_stop,
 
-            # Tema
             "toggle_theme": self.toggle_theme,
         })
 
@@ -112,8 +129,9 @@ class IDEWindow:
         self.apply_theme_to_widgets()
         self._update_title()
 
-        # Forzar actualización inicial del status
+        # Actualización inicial
         self.root.after(50, self._update_cursor_status)
+        self.root.after(100, self._apply_syntax_highlighting)
 
     # ====================================================
     # THEME
@@ -123,8 +141,10 @@ class IDEWindow:
         self.theme_mode = "light" if self.theme_mode == "dark" else "dark"
         self.apply_theme_callback(self.theme_mode)
         self.apply_theme_to_widgets()
+        self._configure_syntax_tags()
         self._redraw_line_numbers()
         self._update_cursor_status()
+        self._apply_syntax_highlighting()
 
     def apply_theme_to_widgets(self):
         t = self.THEMES[self.theme_mode]
@@ -177,7 +197,6 @@ class IDEWindow:
         self.text_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll.config(command=self._on_scroll)
 
-        # Eventos para mantener actualizado el estado del editor
         self.text_area.bind("<<Modified>>", self._on_modified)
         self.text_area.bind("<KeyRelease>", self._on_cursor_move)
         self.text_area.bind("<KeyPress>", self._on_cursor_move)
@@ -188,6 +207,106 @@ class IDEWindow:
 
         self._redraw_line_numbers()
         self._update_cursor_status()
+
+    def _configure_syntax_tags(self):
+        syntax = self.THEMES[self.theme_mode]["syntax"]
+
+        self.text_area.tag_config("KEYWORD", foreground=syntax["KEYWORD"])
+        self.text_area.tag_config("IDENTIFIER", foreground=syntax["IDENTIFIER"])
+        self.text_area.tag_config("NUMBER", foreground=syntax["NUMBER"])
+        self.text_area.tag_config("STRING", foreground=syntax["STRING"])
+        self.text_area.tag_config("OPERATOR", foreground=syntax["OPERATOR"])
+        self.text_area.tag_config("SYMBOL", foreground=syntax["SYMBOL"])
+        self.text_area.tag_config("COMMENT", foreground=syntax["COMMENT"])
+        self.text_area.tag_config("ERROR", foreground=syntax["ERROR"], underline=True)
+
+    def _clear_syntax_tags(self):
+        for tag in ["KEYWORD", "IDENTIFIER", "NUMBER", "STRING", "OPERATOR", "SYMBOL", "COMMENT", "ERROR"]:
+            self.text_area.tag_remove(tag, "1.0", "end")
+
+    def _token_tag_name(self, token_type_name: str) -> str:
+        keywords = {
+            "INT", "FLOAT", "REAL_TYPE", "IF", "ELSE", "THEN", "END",
+            "DO", "WHILE", "UNTIL", "CIN", "COUT", "MAIN"
+        }
+        numbers = {"INTEGER", "REAL"}
+        strings = {"STRING", "CHAR"}
+        operators = {
+            "PLUS", "MINUS", "STAR", "SLASH", "MODULO",
+            "ASSIGN", "EQUAL", "NOT_EQUAL", "LESS", "LESS_EQUAL",
+            "GREATER", "GREATER_EQUAL", "AND", "OR", "NOT"
+        }
+        symbols = {
+            "LPAREN", "RPAREN", "LBRACE", "RBRACE",
+            "LBRACKET", "RBRACKET", "SEMICOLON", "COMMA", "DOT"
+        }
+
+        if token_type_name in keywords:
+            return "KEYWORD"
+        if token_type_name == "IDENTIFIER":
+            return "IDENTIFIER"
+        if token_type_name in numbers:
+            return "NUMBER"
+        if token_type_name in strings:
+            return "STRING"
+        if token_type_name in operators:
+            return "OPERATOR"
+        if token_type_name in symbols:
+            return "SYMBOL"
+
+        return "IDENTIFIER"
+
+    def _apply_syntax_highlighting(self):
+        code = self.text_area.get("1.0", "end-1c")
+        self._clear_syntax_tags()
+
+        try:
+            result = Lexer(code).tokenize()
+        except Exception:
+            return
+
+        if isinstance(result, tuple) and len(result) == 2:
+            tokens, errors = result
+        else:
+            tokens = result
+            errors = []
+
+        for token in tokens:
+            token_type = getattr(token, "token_type", getattr(token, "type", None))
+            if token_type is None:
+                continue
+
+            token_type_name = token_type.name if hasattr(token_type, "name") else str(token_type)
+
+            if token_type_name == "EOF":
+                continue
+
+            lexeme = getattr(token, "lexeme", "")
+            line = getattr(token, "line", None)
+            column = getattr(token, "column", None)
+
+            if line is None or column is None or lexeme == "":
+                continue
+
+            start_index = f"{line}.{column - 1}"
+            end_index = f"{line}.{column - 1 + len(lexeme)}"
+            tag_name = self._token_tag_name(token_type_name)
+
+            self.text_area.tag_add(tag_name, start_index, end_index)
+
+        for error in errors:
+            line = getattr(error, "line", None)
+            column = getattr(error, "column", None)
+            char = getattr(error, "character", "")
+
+            if line is None or column is None:
+                continue
+
+            length = max(1, len(str(char))) if char else 1
+            start_index = f"{line}.{column - 1}"
+            end_index = f"{line}.{column - 1 + length}"
+
+            self.text_area.tag_add("ERROR", start_index, end_index)
 
     def _on_scroll(self, *args):
         self.text_area.yview(*args)
@@ -205,6 +324,7 @@ class IDEWindow:
             self._update_title()
             self._redraw_line_numbers()
             self._update_cursor_status()
+            self._apply_syntax_highlighting()
 
     def _on_cursor_move(self, event=None):
         self._update_cursor_status()
@@ -241,12 +361,6 @@ class IDEWindow:
     # ====================================================
 
     def _refresh_project_explorer_if_needed(self):
-        """
-        Refresca el explorador solo si:
-        - existe project_tree
-        - hay un proyecto abierto en file_manager.project_root
-        - existe el método refresh_project_tree en FileManager
-        """
         if not hasattr(self.panels, "project_tree"):
             return
         if not getattr(self.file_manager, "project_root", None):
@@ -264,6 +378,7 @@ class IDEWindow:
         self._redraw_line_numbers()
         self._update_cursor_status()
         self._refresh_project_explorer_if_needed()
+        self._apply_syntax_highlighting()
 
     def _update_title(self):
         name = self.state.current_file if self.state.current_file else "Nuevo Archivo"
@@ -294,7 +409,6 @@ class IDEWindow:
     def _ui_compile_lex(self):
         code = self.text_area.get("1.0", "end-1c")
 
-        # Limpiar paneles
         self.panels.set_text(self.panels.lexico, "")
         self.panels.set_text(self.panels.err_lex, "")
 
@@ -307,16 +421,12 @@ class IDEWindow:
             self.panels.set_text(self.panels.err_lex, f"Error al ejecutar el lexer:\n{e}\n")
             return
 
-        # Soportar ambos casos:
-        # 1) lexer devuelve (tokens, errors)
-        # 2) lexer devuelve solo tokens
         if isinstance(result, tuple) and len(result) == 2:
             tokens, errors = result
         else:
             tokens = result
             errors = []
 
-        # ---------- Formato de tokens ----------
         token_lines = []
         token_lines.append("TIPO\tLEXEMA\tLINEA\tCOLUMNA")
         token_lines.append("-" * 60)
@@ -337,7 +447,6 @@ class IDEWindow:
         else:
             tokens_text = "\n".join(token_lines) + "\n"
 
-        # ---------- Formato de errores ----------
         error_lines = []
 
         for error in errors:
@@ -356,23 +465,19 @@ class IDEWindow:
         else:
             errors_text = "\n".join(error_lines) + "\n"
 
-        # ---------- Mostrar ----------
         self.panels.results_notebook.select(0)
         self.panels.set_text(self.panels.lexico, tokens_text)
 
         self.panels.bottom_pane.select(0)
         self.panels.set_text(self.panels.err_lex, errors_text)
 
+        self._apply_syntax_highlighting()
+
     def _ui_compile_syn(self):
         self.panels.results_notebook.select(1)
         self.panels.set_text(self.panels.sintactico, "Resultado Sintactico (placeholder)\n")
 
     def _ui_compile_sem(self):
-        """
-        Analisis semantico simulado:
-        - Detecta declaraciones simples: int x; float y;
-        - Construye tabla de simbolos y la muestra en la pestaña 'Simbolos'
-        """
         code = self.text_area.get("1.0", "end-1c")
         lines = code.splitlines()
 
