@@ -80,12 +80,19 @@ class Lexer:
             except LexicalError as error:
                 errors.append(error)
 
-                # Recuperación para no quedarse atorado en el mismo carácter
                 if self.current_char() is None:
                     break
 
+                # Recuperación: avanzar hasta un delimitador o espacio
                 if self.position == start_position:
-                    self.advance()
+                    while self.current_char() is not None and not (
+                        self.current_char().isspace() or self.current_char() in ";,(){}[]"
+                    ):
+                        self.advance()
+
+                    # Si estamos sobre un espacio o delimitador, lo dejamos para el siguiente ciclo
+                    if self.current_char() is None:
+                        break
 
                 continue
 
@@ -157,58 +164,71 @@ class Lexer:
         start_line = self.line
         start_column = self.column
         lexeme_chars = []
+        dot_count = 0
 
-        while self.current_char() is not None and self.current_char().isdigit():
-            lexeme_chars.append(self.current_char())
-            self.advance()
+        while self.current_char() is not None:
+            current = self.current_char()
 
-        if self.current_char() == ".":
-            lexeme_chars.append(".")
-            self.advance()
-
-            if self.current_char() is None or not self.current_char().isdigit():
-                raise LexicalError(
-                    message="Número real mal formado",
-                    line=start_line,
-                    column=start_column,
-                    character="".join(lexeme_chars),
-                )
-
-            while self.current_char() is not None and self.current_char().isdigit():
-                lexeme_chars.append(self.current_char())
+            if current.isdigit():
+                lexeme_chars.append(current)
                 self.advance()
+                continue
 
-            if self.current_char() == ".":
-                raise LexicalError(
-                    message="Número mal formado",
-                    line=start_line,
-                    column=start_column,
-                    character="".join(lexeme_chars) + ".",
-                )
+            if current == ".":
+                dot_count += 1
 
-            if self.current_char() is not None and (
-                self.current_char().isalpha() or self.current_char() == "_"
-            ):
-                raise LexicalError(
-                    message="Número mal formado",
-                    line=start_line,
-                    column=start_column,
-                    character="".join(lexeme_chars) + self.current_char(),
-                )
+                if dot_count > 1:
+                    # Consumir toda la secuencia numérica mal formada
+                    while self.current_char() is not None and (
+                        self.current_char().isdigit() or self.current_char() == "."
+                    ):
+                        lexeme_chars.append(self.current_char())
+                        self.advance()
 
-            return Token(TokenType.REAL, "".join(lexeme_chars), start_line, start_column)
+                    raise LexicalError(
+                        message="Número mal formado",
+                        line=start_line,
+                        column=start_column,
+                        character="".join(lexeme_chars),
+                    )
 
+                lexeme_chars.append(".")
+                self.advance()
+                continue
+
+            break
+
+        # Detectar letras o guion bajo pegados al número
         if self.current_char() is not None and (
             self.current_char().isalpha() or self.current_char() == "_"
         ):
+            while self.current_char() is not None and (
+                self.current_char().isalnum() or self.current_char() == "_"
+            ):
+                lexeme_chars.append(self.current_char())
+                self.advance()
+
             raise LexicalError(
-                message="Número entero mal formado",
+                message="Número mal formado",
                 line=start_line,
                 column=start_column,
-                character="".join(lexeme_chars) + self.current_char(),
+                character="".join(lexeme_chars),
             )
 
-        return Token(TokenType.INTEGER, "".join(lexeme_chars), start_line, start_column)
+        lexeme = "".join(lexeme_chars)
+
+        if lexeme.endswith("."):
+            raise LexicalError(
+                message="Número real mal formado",
+                line=start_line,
+                column=start_column,
+                character=lexeme,
+            )
+
+        if "." in lexeme:
+            return Token(TokenType.REAL, lexeme, start_line, start_column)
+
+        return Token(TokenType.INTEGER, lexeme, start_line, start_column)
 
     def scan_string(self) -> Token:
         start_line = self.line
@@ -314,6 +334,8 @@ class Lexer:
             ">=": TokenType.GREATER_EQUAL,
             "&&": TokenType.AND,
             "||": TokenType.OR,
+            "++": TokenType.INCREMENT,
+            "--": TokenType.DECREMENT,
         }
 
         pair = current + (self.peek() or "")
@@ -328,6 +350,7 @@ class Lexer:
             "*": TokenType.STAR,
             "/": TokenType.SLASH,
             "%": TokenType.MODULO,
+            "^": TokenType.POWER,
             "=": TokenType.ASSIGN,
             "<": TokenType.LESS,
             ">": TokenType.GREATER,

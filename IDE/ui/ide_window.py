@@ -62,7 +62,6 @@ class IDEWindow:
         self.state = IDEState()
         actions = {}
 
-        # Contenedores principales
         self.top_container = ttk.Frame(self.root)
         self.top_container.pack(side=tk.TOP, fill=tk.X)
 
@@ -72,18 +71,14 @@ class IDEWindow:
         self.center_container = ttk.Frame(self.root)
         self.center_container.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        # Status bar
         self.status = ttk.Label(self.bottom_container, text="Ln 1, Col 1", anchor="e")
         self.status.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=8)
 
-        # Panels
         self.panels = Panels(self.center_container)
 
-        # Editor
         self._build_editor(self.panels.editor_container)
         self._configure_syntax_tags()
 
-        # File manager
         self.file_manager = FileManager(
             state=self.state,
             editor_text_widget=self.text_area,
@@ -91,11 +86,9 @@ class IDEWindow:
             on_after_change=self._after_file_change
         )
 
-        # Explorador
         if hasattr(self.panels, "project_tree"):
             self.panels.project_tree.bind("<Double-1>", self._on_tree_open)
 
-        # Acciones
         actions.update({
             "new": self.file_manager.new_file,
             "open": self.file_manager.open_file,
@@ -118,18 +111,14 @@ class IDEWindow:
             "toggle_theme": self.toggle_theme,
         })
 
-        # Menú
         self.root.config(menu=IDEMenu(self.root, actions).build())
 
-        # Toolbar
         self.toolbar = Toolbar(self.top_container, actions)
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
 
-        # Tema inicial
         self.apply_theme_to_widgets()
         self._update_title()
 
-        # Actualización inicial
         self.root.after(50, self._update_cursor_status)
         self.root.after(100, self._apply_syntax_highlighting)
 
@@ -177,14 +166,14 @@ class IDEWindow:
         self.line_numbers = tk.Canvas(frame, width=50, highlightthickness=0)
         self.line_numbers.pack(side=tk.LEFT, fill=tk.Y)
 
-        scroll = ttk.Scrollbar(frame)
-        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.editor_scrollbar = ttk.Scrollbar(frame)
+        self.editor_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         self.text_area = tk.Text(
             frame,
             wrap="none",
             undo=True,
-            yscrollcommand=scroll.set,
+            yscrollcommand=self._on_textscroll,
             relief="flat",
             borderwidth=0
         )
@@ -195,14 +184,16 @@ class IDEWindow:
             pass
 
         self.text_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scroll.config(command=self._on_scroll)
+        self.editor_scrollbar.config(command=self._on_scroll)
 
         self.text_area.bind("<<Modified>>", self._on_modified)
         self.text_area.bind("<KeyRelease>", self._on_cursor_move)
         self.text_area.bind("<KeyPress>", self._on_cursor_move)
         self.text_area.bind("<Button-1>", self._on_cursor_move)
         self.text_area.bind("<ButtonRelease-1>", self._on_cursor_move)
-        self.text_area.bind("<MouseWheel>", self._on_mousewheel)
+        self.text_area.bind("<MouseWheel>", self._on_mousewheel)   # Windows
+        self.text_area.bind("<Button-4>", self._on_mousewheel)     # Linux scroll up
+        self.text_area.bind("<Button-5>", self._on_mousewheel)     # Linux scroll down
         self.text_area.bind("<Configure>", lambda e: self._redraw_line_numbers())
 
         self._redraw_line_numbers()
@@ -232,7 +223,8 @@ class IDEWindow:
         numbers = {"INTEGER", "REAL"}
         strings = {"STRING", "CHAR"}
         operators = {
-            "PLUS", "MINUS", "STAR", "SLASH", "MODULO",
+            "PLUS", "MINUS", "STAR", "SLASH", "MODULO", "POWER",
+            "INCREMENT", "DECREMENT",
             "ASSIGN", "EQUAL", "NOT_EQUAL", "LESS", "LESS_EQUAL",
             "GREATER", "GREATER_EQUAL", "AND", "OR", "NOT"
         }
@@ -308,14 +300,23 @@ class IDEWindow:
 
             self.text_area.tag_add("ERROR", start_index, end_index)
 
+    def _on_textscroll(self, first, last):
+        """
+        Se ejecuta cada vez que cambia la vista vertical del Text.
+        Mantiene sincronizado el scrollbar y los números de línea.
+        """
+        self.editor_scrollbar.set(first, last)
+        self._redraw_line_numbers()
+        self._update_cursor_status()
+
     def _on_scroll(self, *args):
         self.text_area.yview(*args)
         self._redraw_line_numbers()
         self._update_cursor_status()
 
     def _on_mousewheel(self, event):
-        self._redraw_line_numbers()
-        self._update_cursor_status()
+        self.root.after_idle(self._redraw_line_numbers)
+        self.root.after_idle(self._update_cursor_status)
 
     def _on_modified(self, event=None):
         if self.text_area.edit_modified():

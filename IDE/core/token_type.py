@@ -16,7 +16,7 @@ class TokenType(Enum):
     # =========================
     INT = auto()
     FLOAT = auto()
-    REAL_TYPE = auto()   # para "real" (evita conflicto con REAL número)
+    REAL_TYPE = auto()   # palabra reservada "real"
 
     IF = auto()
     ELSE = auto()
@@ -40,6 +40,9 @@ class TokenType(Enum):
     STAR = auto()
     SLASH = auto()
     MODULO = auto()
+    POWER = auto()       # ^
+    INCREMENT = auto()   # ++
+    DECREMENT = auto()   # --
 
     # =========================
     # Operadores relacionales
