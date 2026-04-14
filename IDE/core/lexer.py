@@ -41,14 +41,13 @@ class Lexer:
         errors: List[LexicalError] = []
 
         while self.current_char() is not None:
-            start_position = self.position
-
             try:
                 self.skip_ignored()
 
                 if self.current_char() is None:
                     break
 
+                start_position = self.position
                 current = self.current_char()
 
                 if current.isalpha() or current == "_":
@@ -67,6 +66,9 @@ class Lexer:
                     tokens.append(self.scan_char())
                     continue
 
+                # Caso como: .5
+                # Si no quieres permitir números que empiecen con punto,
+                # se reporta error y solo se consume ese punto.
                 if current == "." and self.peek() is not None and self.peek().isdigit():
                     raise LexicalError(
                         message="Número mal formado",
@@ -83,16 +85,10 @@ class Lexer:
                 if self.current_char() is None:
                     break
 
-                # Recuperación: avanzar hasta un delimitador o espacio
+                # Si no se avanzó nada durante el intento fallido,
+                # consumir solo un carácter para no tragarse el resto.
                 if self.position == start_position:
-                    while self.current_char() is not None and not (
-                        self.current_char().isspace() or self.current_char() in ";,(){}[]"
-                    ):
-                        self.advance()
-
-                    # Si estamos sobre un espacio o delimitador, lo dejamos para el siguiente ciclo
-                    if self.current_char() is None:
-                        break
+                    self.advance()
 
                 continue
 
@@ -175,30 +171,19 @@ class Lexer:
                 continue
 
             if current == ".":
-                dot_count += 1
-
-                if dot_count > 1:
-                    # Consumir toda la secuencia numérica mal formada
-                    while self.current_char() is not None and (
-                        self.current_char().isdigit() or self.current_char() == "."
-                    ):
-                        lexeme_chars.append(self.current_char())
-                        self.advance()
-
-                    raise LexicalError(
-                        message="Número mal formado",
-                        line=start_line,
-                        column=start_column,
-                        character="".join(lexeme_chars),
-                    )
-
-                lexeme_chars.append(".")
-                self.advance()
-                continue
+                if dot_count == 0:
+                    dot_count += 1
+                    lexeme_chars.append(current)
+                    self.advance()
+                    continue
+                else:
+                    # Segundo punto: no pertenece al número actual.
+                    # Se deja sin consumir para que el lexer lo procese después.
+                    break
 
             break
 
-        # Detectar letras o guion bajo pegados al número
+        # Detectar letras o guion bajo pegados al número, por ejemplo: 12abc
         if self.current_char() is not None and (
             self.current_char().isalpha() or self.current_char() == "_"
         ):
