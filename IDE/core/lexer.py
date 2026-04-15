@@ -36,6 +36,70 @@ class Lexer:
         else:
             self.column += 1
 
+    def peek_next_non_ignored_char(self) -> Optional[str]:
+        index = self.position + 1
+
+        while index < len(self.source):
+            current = self.source[index]
+
+            # Ignorar espacios, tabs y saltos de línea
+            if current.isspace():
+                index += 1
+                continue
+
+            # Ignorar comentario de línea //
+            if current == "/" and index + 1 < len(self.source) and self.source[index + 1] == "/":
+                index += 2
+                while index < len(self.source) and self.source[index] != "\n":
+                    index += 1
+                continue
+
+            # Ignorar comentario de bloque /* ... */
+            if current == "/" and index + 1 < len(self.source) and self.source[index + 1] == "*":
+                index += 2
+                while index + 1 < len(self.source):
+                    if self.source[index] == "*" and self.source[index + 1] == "/":
+                        index += 2
+                        break
+                    index += 1
+                else:
+                    return None
+                continue
+
+            return current
+
+        return None
+
+    def consume_ignored_between_operator_parts(self) -> None:
+        while True:
+            current = self.current_char()
+
+            while current is not None and current.isspace():
+                self.advance()
+                current = self.current_char()
+
+            if current == "/" and self.peek() == "/":
+                self.advance()
+                self.advance()
+                while self.current_char() not in (None, "\n"):
+                    self.advance()
+                continue
+
+            if current == "/" and self.peek() == "*":
+                self.advance()
+                self.advance()
+                while True:
+                    if self.current_char() is None:
+                        return
+                    if self.current_char() == "*" and self.peek() == "/":
+                        self.advance()
+                        self.advance()
+                        break
+                    self.advance()
+                continue
+
+            break
+
     def tokenize(self) -> Tuple[List[Token], List[LexicalError]]:
         tokens: List[Token] = []
         errors: List[LexicalError] = []
@@ -66,9 +130,6 @@ class Lexer:
                     tokens.append(self.scan_char())
                     continue
 
-                # Caso como: .5
-                # Si no quieres permitir números que empiecen con punto,
-                # se reporta error y solo se consume ese punto.
                 if current == "." and self.peek() is not None and self.peek().isdigit():
                     raise LexicalError(
                         message="Número mal formado",
@@ -85,8 +146,6 @@ class Lexer:
                 if self.current_char() is None:
                     break
 
-                # Si no se avanzó nada durante el intento fallido,
-                # consumir solo un carácter para no tragarse el resto.
                 if self.position == start_position:
                     self.advance()
 
@@ -177,13 +236,10 @@ class Lexer:
                     self.advance()
                     continue
                 else:
-                    # Segundo punto: no pertenece al número actual.
-                    # Se deja sin consumir para que el lexer lo procese después.
                     break
 
             break
 
-        # Detectar letras o guion bajo pegados al número, por ejemplo: 12abc
         if self.current_char() is not None and (
             self.current_char().isalpha() or self.current_char() == "_"
         ):
@@ -323,11 +379,15 @@ class Lexer:
             "--": TokenType.DECREMENT,
         }
 
-        pair = current + (self.peek() or "")
+        next_non_ignored = self.peek_next_non_ignored_char()
+        pair = current + (next_non_ignored or "")
+
         if pair in two_char_tokens:
-            self.advance()
-            self.advance()
-            return Token(two_char_tokens[pair], pair, start_line, start_column)
+            self.advance()  # consume el primer símbolo
+            self.consume_ignored_between_operator_parts()
+            if self.current_char() == pair[1]:
+                self.advance()  # consume el segundo símbolo
+                return Token(two_char_tokens[pair], pair, start_line, start_column)
 
         one_char_tokens = {
             "+": TokenType.PLUS,

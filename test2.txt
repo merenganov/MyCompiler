@@ -1,6 +1,18 @@
-main sum@r 3.14+main)if{32.algo
-34.34.34.34
-{
+//main sum@r 3.14+main)if{32.algo
+34.34.34.34.325.25.35
+a+
+
++
+
+b-
+
+-
+
+c=
+
+
+=
+/*{
 int x,y,z;
 real a,b,c;
  suma=45;
@@ -23,18 +35,18 @@ if(2>3)then
            b=5.0;
        end;
        y=y+1;
-end;
+end;*/
 a+
 
 +;
 c--;
-x=3+4;
+/*x=3+4;
 do
    y=(y+1)*2+1;
    while(x>7){x=6+8/9*8/3;   
     cin x; 
    mas=36/7; 
-   };
+   };*/
 
  until(y=
 
