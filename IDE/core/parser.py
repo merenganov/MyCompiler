@@ -12,19 +12,28 @@ class Parser:
     """
     Analizador sintáctico descendente recursivo.
 
-    Recibe la lista de tokens generada por lexer.tokenize()
-    y construye un árbol sintáctico usando SyntaxNode.
+    Esta versión genera un árbol sintáctico más abstracto, parecido a un AST:
 
-    En las expresiones binarias, el operador se usa como raíz del subárbol.
     Ejemplo:
-        y = 2 + 3 - 1;
+        y = y + 1;
 
-    Se representa como:
-        OPERADOR: -
-            OPERADOR: +
-                NUMERO: 2
-                NUMERO: 3
-            NUMERO: 1
+    Árbol:
+        =
+        ├── y <ID>
+        └── +
+            ├── y <ID>
+            └── 1 <INT>
+
+    El parser sigue validando:
+    - ;
+    - ()
+    - {}
+    - then
+    - end
+    - else
+
+    Pero esos símbolos ya no se agregan al árbol porque no son relevantes
+    para la estructura abstracta.
     """
 
     TYPE_TOKENS = {
@@ -33,19 +42,12 @@ class Parser:
         TokenType.REAL_TYPE,
     }
 
-    LITERAL_TOKENS = {
-        TokenType.INTEGER,
-        TokenType.REAL,
-        TokenType.STRING,
-        TokenType.CHAR,
-    }
-
     def __init__(self, tokens: List[Token]) -> None:
         self.tokens = tokens if tokens is not None else []
         self.position = 0
 
     # =========================================================
-    # Métodos auxiliares
+    # MÉTODOS AUXILIARES
     # =========================================================
 
     def current_token(self) -> Optional[Token]:
@@ -70,15 +72,11 @@ class Parser:
 
     def check(self, token_type: TokenType) -> bool:
         token = self.current_token()
-        if token is None:
-            return False
-        return token.token_type == token_type
+        return token is not None and token.token_type == token_type
 
     def check_any(self, token_types: Set[TokenType]) -> bool:
         token = self.current_token()
-        if token is None:
-            return False
-        return token.token_type in token_types
+        return token is not None and token.token_type in token_types
 
     def advance(self) -> Optional[Token]:
         token = self.current_token()
@@ -92,6 +90,7 @@ class Parser:
         for token_type in token_types:
             if self.check(token_type):
                 return self.advance()
+
         return None
 
     def consume(self, token_type: TokenType, message: str) -> Token:
@@ -101,8 +100,7 @@ class Parser:
             self.position += 1
             return token
 
-        expected = token_type.name
-        raise SyntaxErrorCompiler(message, token, expected)
+        raise SyntaxErrorCompiler(message, token, token_type.name)
 
     def consume_any(self, token_types: Set[TokenType], message: str) -> Token:
         token = self.current_token()
@@ -117,13 +115,11 @@ class Parser:
     def token_node(self, name: str, token: Token) -> SyntaxNode:
         return SyntaxNode(name, token)
 
-    def optional_semicolon(self, parent_node: SyntaxNode) -> None:
-        semicolon = self.match(TokenType.SEMICOLON)
-        if semicolon is not None:
-            parent_node.add_child(self.token_node("PUNTO_COMA", semicolon))
+    def optional_semicolon(self) -> None:
+        self.match(TokenType.SEMICOLON)
 
     # =========================================================
-    # Entrada principal
+    # ENTRADA PRINCIPAL
     # =========================================================
 
     def parse(self) -> SyntaxNode:
@@ -135,18 +131,18 @@ class Parser:
         return root
 
     # =========================================================
-    # Sentencias
+    # SENTENCIAS
     # =========================================================
 
-    def statement(self) -> SyntaxNode:
+    def statement(self) -> Optional[SyntaxNode]:
         token = self.current_token()
 
         if token is None:
             raise SyntaxErrorCompiler("Fin inesperado del archivo", token)
 
         if self.check(TokenType.SEMICOLON):
-            semicolon = self.advance()
-            return self.token_node("SENTENCIA_VACIA", semicolon)
+            self.advance()
+            return None
 
         if self.check(TokenType.MAIN):
             return self.main_statement()
@@ -185,23 +181,19 @@ class Parser:
         )
 
     # =========================================================
-    # main
+    # MAIN
     # =========================================================
 
     def main_statement(self) -> SyntaxNode:
-        node = SyntaxNode("FUNCION_MAIN")
+        node = SyntaxNode("MAIN")
 
-        main_token = self.consume(TokenType.MAIN, "Se esperaba 'main'")
-        node.add_child(self.token_node("MAIN", main_token))
+        self.consume(TokenType.MAIN, "Se esperaba 'main'")
 
         if self.match(TokenType.LPAREN) is not None:
-            node.add_child(self.token_node("PARENTESIS_IZQUIERDO", self.previous_token()))
-
-            right = self.consume(
+            self.consume(
                 TokenType.RPAREN,
                 "Se esperaba ')' después de '(' en main"
             )
-            node.add_child(self.token_node("PARENTESIS_DERECHO", right))
 
         if not self.check(TokenType.LBRACE):
             raise SyntaxErrorCompiler(
@@ -214,20 +206,18 @@ class Parser:
         return node
 
     # =========================================================
-    # Bloques
+    # BLOQUES
     # =========================================================
 
     def block(self) -> SyntaxNode:
         node = SyntaxNode("BLOQUE")
 
-        left = self.consume(TokenType.LBRACE, "Se esperaba '{' para iniciar el bloque")
-        node.add_child(self.token_node("LLAVE_IZQUIERDA", left))
+        self.consume(TokenType.LBRACE, "Se esperaba '{' para iniciar el bloque")
 
         while not self.is_at_end() and not self.check(TokenType.RBRACE):
             node.add_child(self.statement())
 
-        right = self.consume(TokenType.RBRACE, "Se esperaba '}' para cerrar el bloque")
-        node.add_child(self.token_node("LLAVE_DERECHA", right))
+        self.consume(TokenType.RBRACE, "Se esperaba '}' para cerrar el bloque")
 
         return node
 
@@ -240,96 +230,92 @@ class Parser:
         return node
 
     # =========================================================
-    # Declaraciones
+    # DECLARACIONES
+    # Ejemplos:
+    # int x,y,z;
+    # real a,b,c;
+    # int x = 5;
     # =========================================================
 
     def declaration(self) -> SyntaxNode:
-        node = SyntaxNode("DECLARACION")
-
         type_token = self.consume_any(
             self.TYPE_TOKENS,
             "Se esperaba un tipo de dato"
         )
-        node.add_child(self.token_node("TIPO_DATO", type_token))
 
-        variables_node = SyntaxNode("VARIABLES")
+        node = SyntaxNode("DECLARAR", type_token)
 
         while True:
-            variable_node = SyntaxNode("VARIABLE")
-
             identifier = self.consume(
                 TokenType.IDENTIFIER,
                 "Se esperaba un identificador después del tipo de dato"
             )
-            variable_node.add_child(self.token_node("IDENTIFICADOR", identifier))
 
             assign = self.match(TokenType.ASSIGN)
-            if assign is not None:
-                variable_node.add_child(self.token_node("ASIGNACION", assign))
-                variable_node.add_child(self.expression())
 
-            variables_node.add_child(variable_node)
+            if assign is not None:
+                assign_node = SyntaxNode("OPERADOR", assign)
+                assign_node.add_child(self.token_node("IDENTIFICADOR", identifier))
+                assign_node.add_child(self.expression())
+                node.add_child(assign_node)
+            else:
+                node.add_child(self.token_node("IDENTIFICADOR", identifier))
 
             comma = self.match(TokenType.COMMA)
             if comma is None:
                 break
 
-            variables_node.add_child(self.token_node("COMA", comma))
-
-        node.add_child(variables_node)
-
-        semicolon = self.consume(
+        self.consume(
             TokenType.SEMICOLON,
             "Se esperaba ';' al final de la declaración"
         )
-        node.add_child(self.token_node("PUNTO_COMA", semicolon))
 
         return node
 
     # =========================================================
-    # Sentencias que empiezan con identificador
+    # ASIGNACIONES, INCREMENTOS Y LLAMADAS
+    # Ejemplos:
+    # x = 10;
+    # x++;
+    # x--;
+    # funcion(a, b);
     # =========================================================
 
     def identifier_statement(self) -> SyntaxNode:
         identifier = self.consume(TokenType.IDENTIFIER, "Se esperaba un identificador")
 
         if self.check(TokenType.LPAREN):
-            node = SyntaxNode("SENTENCIA_LLAMADA_FUNCION")
-            node.add_child(self.finish_function_call(identifier))
+            node = self.finish_function_call(identifier)
 
-            semicolon = self.consume(
+            self.consume(
                 TokenType.SEMICOLON,
                 "Se esperaba ';' al final de la llamada a función"
             )
-            node.add_child(self.token_node("PUNTO_COMA", semicolon))
+
             return node
 
         assign = self.match(TokenType.ASSIGN)
         if assign is not None:
-            node = SyntaxNode("ASIGNACION")
+            node = SyntaxNode("OPERADOR", assign)
             node.add_child(self.token_node("IDENTIFICADOR", identifier))
-            node.add_child(self.token_node("OPERADOR_ASIGNACION", assign))
             node.add_child(self.expression())
 
-            semicolon = self.consume(
+            self.consume(
                 TokenType.SEMICOLON,
                 "Se esperaba ';' al final de la asignación"
             )
-            node.add_child(self.token_node("PUNTO_COMA", semicolon))
 
             return node
 
         increment = self.match(TokenType.INCREMENT, TokenType.DECREMENT)
         if increment is not None:
-            node = SyntaxNode("INCREMENTO_DECREMENTO")
+            node = SyntaxNode("OPERADOR", increment)
             node.add_child(self.token_node("IDENTIFICADOR", identifier))
-            node.add_child(self.token_node("OPERADOR", increment))
 
-            semicolon = self.consume(
+            self.consume(
                 TokenType.SEMICOLON,
                 "Se esperaba ';' después del incremento o decremento"
             )
-            node.add_child(self.token_node("PUNTO_COMA", semicolon))
 
             return node
 
@@ -340,82 +326,73 @@ class Parser:
         )
 
     def prefix_increment_statement(self) -> SyntaxNode:
-        node = SyntaxNode("INCREMENTO_DECREMENTO_PREFIJO")
-
         operator = self.consume_any(
             {TokenType.INCREMENT, TokenType.DECREMENT},
             "Se esperaba '++' o '--'"
         )
-        node.add_child(self.token_node("OPERADOR", operator))
 
         identifier = self.consume(
             TokenType.IDENTIFIER,
             "Se esperaba un identificador después de '++' o '--'"
         )
+
+        node = SyntaxNode("OPERADOR", operator)
         node.add_child(self.token_node("IDENTIFICADOR", identifier))
 
-        semicolon = self.consume(
+        self.consume(
             TokenType.SEMICOLON,
             "Se esperaba ';' después del incremento o decremento"
         )
-        node.add_child(self.token_node("PUNTO_COMA", semicolon))
 
         return node
 
     # =========================================================
-    # if
+    # IF
+    # Soporta:
+    # if (condicion) then ... else ... end;
+    # if (condicion) { ... } else { ... }
     # =========================================================
 
     def if_statement(self) -> SyntaxNode:
-        node = SyntaxNode("CONDICIONAL_IF")
+        node = SyntaxNode("IF")
 
-        if_token = self.consume(TokenType.IF, "Se esperaba 'if'")
-        node.add_child(self.token_node("IF", if_token))
-
+        self.consume(TokenType.IF, "Se esperaba 'if'")
         node.add_child(self.condition())
 
         then_token = self.match(TokenType.THEN)
 
         if then_token is not None:
-            node.add_child(self.token_node("THEN", then_token))
-
-            then_block = self.parse_until(
+            then_node = self.parse_until(
                 {TokenType.ELSE, TokenType.END},
-                "BLOQUE_THEN"
+                "THEN"
             )
-            node.add_child(then_block)
+            node.add_child(then_node)
 
             else_token = self.match(TokenType.ELSE)
             if else_token is not None:
-                else_node = SyntaxNode("BLOQUE_ELSE")
-                else_node.add_child(self.token_node("ELSE", else_token))
-                else_node.add_child(
-                    self.parse_until({TokenType.END}, "SENTENCIAS_ELSE")
-                )
+                else_node = self.parse_until({TokenType.END}, "ELSE")
                 node.add_child(else_node)
 
-            end_token = self.consume(
+            self.consume(
                 TokenType.END,
                 "Se esperaba 'end' para cerrar el if"
             )
-            node.add_child(self.token_node("END", end_token))
 
-            self.optional_semicolon(node)
+            self.optional_semicolon()
             return node
 
-        then_block = SyntaxNode("BLOQUE_THEN")
+        then_node = SyntaxNode("THEN")
 
         if self.check(TokenType.LBRACE):
-            then_block.add_child(self.block())
+            then_node.add_child(self.block())
         else:
-            then_block.add_child(self.statement())
+            then_node.add_child(self.statement())
 
-        node.add_child(then_block)
+        node.add_child(then_node)
 
         else_token = self.match(TokenType.ELSE)
         if else_token is not None:
-            else_node = SyntaxNode("BLOQUE_ELSE")
-            else_node.add_child(self.token_node("ELSE", else_token))
+            else_node = SyntaxNode("ELSE")
 
             if self.check(TokenType.IF):
                 else_node.add_child(self.if_statement())
@@ -429,32 +406,30 @@ class Parser:
         return node
 
     # =========================================================
-    # while
+    # WHILE
+    # Soporta:
+    # while (condicion) { ... }
+    # while condicion do ... end;
     # =========================================================
 
     def while_statement(self) -> SyntaxNode:
-        node = SyntaxNode("CICLO_WHILE")
+        node = SyntaxNode("WHILE")
 
-        while_token = self.consume(TokenType.WHILE, "Se esperaba 'while'")
-        node.add_child(self.token_node("WHILE", while_token))
-
+        self.consume(TokenType.WHILE, "Se esperaba 'while'")
         node.add_child(self.condition())
 
         do_token = self.match(TokenType.DO)
 
         if do_token is not None:
-            node.add_child(self.token_node("DO", do_token))
-
-            body = self.parse_until({TokenType.END}, "CUERPO_WHILE")
+            body = self.parse_until({TokenType.END}, "CUERPO")
             node.add_child(body)
 
-            end_token = self.consume(
+            self.consume(
                 TokenType.END,
                 "Se esperaba 'end' para cerrar el while"
             )
-            node.add_child(self.token_node("END", end_token))
 
-            self.optional_semicolon(node)
+            self.optional_semicolon()
             return node
 
         if self.check(TokenType.LBRACE):
@@ -465,37 +440,43 @@ class Parser:
         return node
 
     # =========================================================
-    # do-until / do-while
+    # DO / DO-WHILE / DO-UNTIL
+    # Soporta:
+    # do { ... } while(condicion);
+    # do { ... } until(condicion);
     # =========================================================
 
     def do_statement(self) -> SyntaxNode:
-        node = SyntaxNode("CICLO_DO")
+        node = SyntaxNode("DO")
 
-        do_token = self.consume(TokenType.DO, "Se esperaba 'do'")
-        node.add_child(self.token_node("DO", do_token))
+        self.consume(TokenType.DO, "Se esperaba 'do'")
+
+        body_node = SyntaxNode("CUERPO")
 
         if self.check(TokenType.LBRACE):
-            node.add_child(self.block())
+            body_node.add_child(self.block())
         else:
-            node.add_child(
+            body_node.add_child(
                 self.parse_until(
                     {TokenType.WHILE, TokenType.UNTIL},
-                    "CUERPO_DO"
+                    "BLOQUE"
                 )
             )
 
+        node.add_child(body_node)
+
         if self.check(TokenType.WHILE):
-            while_token = self.consume(TokenType.WHILE, "Se esperaba 'while'")
-            node.add_child(self.token_node("WHILE", while_token))
+            self.consume(TokenType.WHILE, "Se esperaba 'while'")
+            node.name = "DO_WHILE"
             node.add_child(self.condition())
-            self.optional_semicolon(node)
+            self.optional_semicolon()
             return node
 
         if self.check(TokenType.UNTIL):
-            until_token = self.consume(TokenType.UNTIL, "Se esperaba 'until'")
-            node.add_child(self.token_node("UNTIL", until_token))
+            self.consume(TokenType.UNTIL, "Se esperaba 'until'")
+            node.name = "DO_UNTIL"
             node.add_child(self.condition())
-            self.optional_semicolon(node)
+            self.optional_semicolon()
             return node
 
         raise SyntaxErrorCompiler(
@@ -505,57 +486,49 @@ class Parser:
         )
 
     # =========================================================
-    # cin / cout
+    # COUT
+    # Soporta:
+    # cout(x);
+    # cout << x;
     # =========================================================
 
     def cout_statement(self) -> SyntaxNode:
-        node = SyntaxNode("SALIDA_COUT")
+        node = SyntaxNode("COUT")
 
-        cout_token = self.consume(TokenType.COUT, "Se esperaba 'cout'")
-        node.add_child(self.token_node("COUT", cout_token))
+        self.consume(TokenType.COUT, "Se esperaba 'cout'")
 
         left_paren = self.match(TokenType.LPAREN)
         if left_paren is not None:
-            node.add_child(self.token_node("PARENTESIS_IZQUIERDO", left_paren))
             node.add_child(self.expression())
 
-            right_paren = self.consume(
+            self.consume(
                 TokenType.RPAREN,
                 "Se esperaba ')' después de la expresión en cout"
             )
-            node.add_child(self.token_node("PARENTESIS_DERECHO", right_paren))
 
-            semicolon = self.consume(
+            self.consume(
                 TokenType.SEMICOLON,
                 "Se esperaba ';' al final de cout"
             )
-            node.add_child(self.token_node("PUNTO_COMA", semicolon))
+
             return node
 
         output_operator = self.match_double(TokenType.LESS)
         if output_operator is not None:
-            node.add_child(self.double_operator_node("OPERADOR_SALIDA", output_operator))
-
-            values_node = SyntaxNode("VALORES_SALIDA")
-            values_node.add_child(self.expression())
+            node.add_child(self.expression())
 
             while True:
                 next_operator = self.match_double(TokenType.LESS)
                 if next_operator is None:
                     break
 
-                values_node.add_child(
-                    self.double_operator_node("OPERADOR_SALIDA", next_operator)
-                )
-                values_node.add_child(self.expression())
+                node.add_child(self.expression())
 
-            node.add_child(values_node)
-
-            semicolon = self.consume(
+            self.consume(
                 TokenType.SEMICOLON,
                 "Se esperaba ';' al final de cout"
             )
-            node.add_child(self.token_node("PUNTO_COMA", semicolon))
+
             return node
 
         raise SyntaxErrorCompiler(
@@ -564,86 +537,73 @@ class Parser:
             "LPAREN o LESS LESS"
         )
 
-    def cin_statement(self) -> SyntaxNode:
-        node = SyntaxNode("ENTRADA_CIN")
+    # =========================================================
+    # CIN
+    # Soporta:
+    # cin(x);
+    # cin >> x;
+    # =========================================================
 
-        cin_token = self.consume(TokenType.CIN, "Se esperaba 'cin'")
-        node.add_child(self.token_node("CIN", cin_token))
+    def cin_statement(self) -> SyntaxNode:
+        node = SyntaxNode("CIN")
+
+        self.consume(TokenType.CIN, "Se esperaba 'cin'")
 
         left_paren = self.match(TokenType.LPAREN)
         if left_paren is not None:
-            node.add_child(self.token_node("PARENTESIS_IZQUIERDO", left_paren))
-
-            identifiers_node = SyntaxNode("IDENTIFICADORES_ENTRADA")
-
             identifier = self.consume(
                 TokenType.IDENTIFIER,
                 "Se esperaba un identificador en cin"
             )
-            identifiers_node.add_child(self.token_node("IDENTIFICADOR", identifier))
+            node.add_child(self.token_node("IDENTIFICADOR", identifier))
 
             while True:
                 comma = self.match(TokenType.COMMA)
                 if comma is None:
                     break
 
-                identifiers_node.add_child(self.token_node("COMA", comma))
-
                 identifier = self.consume(
                     TokenType.IDENTIFIER,
                     "Se esperaba un identificador después de ',' en cin"
                 )
-                identifiers_node.add_child(self.token_node("IDENTIFICADOR", identifier))
+                node.add_child(self.token_node("IDENTIFICADOR", identifier))
 
-            node.add_child(identifiers_node)
-
-            right_paren = self.consume(
+            self.consume(
                 TokenType.RPAREN,
                 "Se esperaba ')' después de los identificadores en cin"
             )
-            node.add_child(self.token_node("PARENTESIS_DERECHO", right_paren))
 
-            semicolon = self.consume(
+            self.consume(
                 TokenType.SEMICOLON,
                 "Se esperaba ';' al final de cin"
             )
-            node.add_child(self.token_node("PUNTO_COMA", semicolon))
+
             return node
 
         input_operator = self.match_double(TokenType.GREATER)
         if input_operator is not None:
-            node.add_child(self.double_operator_node("OPERADOR_ENTRADA", input_operator))
-
-            identifiers_node = SyntaxNode("IDENTIFICADORES_ENTRADA")
-
             identifier = self.consume(
                 TokenType.IDENTIFIER,
                 "Se esperaba un identificador después de '>>'"
             )
-            identifiers_node.add_child(self.token_node("IDENTIFICADOR", identifier))
+            node.add_child(self.token_node("IDENTIFICADOR", identifier))
 
             while True:
                 next_operator = self.match_double(TokenType.GREATER)
                 if next_operator is None:
                     break
 
-                identifiers_node.add_child(
-                    self.double_operator_node("OPERADOR_ENTRADA", next_operator)
-                )
-
                 identifier = self.consume(
                     TokenType.IDENTIFIER,
                     "Se esperaba un identificador después de '>>'"
                 )
-                identifiers_node.add_child(self.token_node("IDENTIFICADOR", identifier))
+                node.add_child(self.token_node("IDENTIFICADOR", identifier))
 
-            node.add_child(identifiers_node)
-
-            semicolon = self.consume(
+            self.consume(
                 TokenType.SEMICOLON,
                 "Se esperaba ';' al final de cin"
             )
-            node.add_child(self.token_node("PUNTO_COMA", semicolon))
+
             return node
 
         raise SyntaxErrorCompiler(
@@ -660,14 +620,8 @@ class Parser:
 
         return None
 
-    def double_operator_node(self, name: str, tokens: Tuple[Token, Token]) -> SyntaxNode:
-        node = SyntaxNode(name)
-        node.add_child(self.token_node(tokens[0].token_type.name, tokens[0]))
-        node.add_child(self.token_node(tokens[1].token_type.name, tokens[1]))
-        return node
-
     # =========================================================
-    # Condiciones
+    # CONDICIONES
     # =========================================================
 
     def condition(self) -> SyntaxNode:
@@ -675,64 +629,54 @@ class Parser:
 
         left_paren = self.match(TokenType.LPAREN)
         if left_paren is not None:
-            node.add_child(self.token_node("PARENTESIS_IZQUIERDO", left_paren))
             node.add_child(self.expression())
 
-            right_paren = self.consume(
+            self.consume(
                 TokenType.RPAREN,
                 "Se esperaba ')' después de la condición"
             )
-            node.add_child(self.token_node("PARENTESIS_DERECHO", right_paren))
+
             return node
 
         node.add_child(self.expression())
         return node
 
     # =========================================================
-    # Llamadas a función
+    # LLAMADAS A FUNCIÓN
     # =========================================================
 
     def finish_function_call(self, identifier_token: Token) -> SyntaxNode:
-        node = SyntaxNode("LLAMADA_FUNCION")
+        node = SyntaxNode("LLAMAR")
         node.add_child(self.token_node("IDENTIFICADOR", identifier_token))
 
-        left = self.consume(
+        self.consume(
             TokenType.LPAREN,
             "Se esperaba '(' en la llamada a función"
         )
-        node.add_child(self.token_node("PARENTESIS_IZQUIERDO", left))
-
-        arguments_node = SyntaxNode("ARGUMENTOS")
 
         if not self.check(TokenType.RPAREN):
-            arguments_node.add_child(self.expression())
+            node.add_child(self.expression())
 
             while True:
                 comma = self.match(TokenType.COMMA)
                 if comma is None:
                     break
 
-                arguments_node.add_child(self.token_node("COMA", comma))
-                arguments_node.add_child(self.expression())
+                node.add_child(self.expression())
 
-        node.add_child(arguments_node)
-
-        right = self.consume(
+        self.consume(
             TokenType.RPAREN,
             "Se esperaba ')' para cerrar la llamada a función"
         )
-        node.add_child(self.token_node("PARENTESIS_DERECHO", right))
 
         return node
 
     # =========================================================
-    # Expresiones con precedencia
+    # EXPRESIONES CON PRECEDENCIA
     # =========================================================
 
     def expression(self) -> SyntaxNode:
-        node = SyntaxNode("EXPRESION")
-        node.add_child(self.logical_or())
-        return node
+        return self.logical_or()
 
     def logical_or(self) -> SyntaxNode:
         node = self.logical_and()
@@ -742,7 +686,7 @@ class Parser:
             if operator is None:
                 break
 
-            node = self.binary_node("OPERACION_OR", node, operator, self.logical_and())
+            node = self.binary_node(node, operator, self.logical_and())
 
         return node
 
@@ -754,7 +698,7 @@ class Parser:
             if operator is None:
                 break
 
-            node = self.binary_node("OPERACION_AND", node, operator, self.equality())
+            node = self.binary_node(node, operator, self.equality())
 
         return node
 
@@ -766,7 +710,7 @@ class Parser:
             if operator is None:
                 break
 
-            node = self.binary_node("OPERACION_IGUALDAD", node, operator, self.comparison())
+            node = self.binary_node(node, operator, self.comparison())
 
         return node
 
@@ -790,7 +734,7 @@ class Parser:
             if operator is None:
                 break
 
-            node = self.binary_node("OPERACION_COMPARACION", node, operator, self.term())
+            node = self.binary_node(node, operator, self.term())
 
         return node
 
@@ -802,7 +746,7 @@ class Parser:
             if operator is None:
                 break
 
-            node = self.binary_node("OPERACION_SUMA_RESTA", node, operator, self.factor())
+            node = self.binary_node(node, operator, self.factor())
 
         return node
 
@@ -814,12 +758,7 @@ class Parser:
             if operator is None:
                 break
 
-            node = self.binary_node(
-                "OPERACION_MULTIPLICACION_DIVISION",
-                node,
-                operator,
-                self.power()
-            )
+            node = self.binary_node(node, operator, self.power())
 
         return node
 
@@ -831,7 +770,7 @@ class Parser:
             if operator is None:
                 break
 
-            node = self.binary_node("OPERACION_POTENCIA", node, operator, self.unary())
+            node = self.binary_node(node, operator, self.unary())
 
         return node
 
@@ -883,17 +822,14 @@ class Parser:
 
         left_paren = self.match(TokenType.LPAREN)
         if left_paren is not None:
-            node = SyntaxNode("EXPRESION_AGRUPADA")
-            node.add_child(self.token_node("PARENTESIS_IZQUIERDO", left_paren))
-            node.add_child(self.expression())
+            expression_node = self.expression()
 
-            right_paren = self.consume(
+            self.consume(
                 TokenType.RPAREN,
                 "Se esperaba ')' después de la expresión"
             )
-            node.add_child(self.token_node("PARENTESIS_DERECHO", right_paren))
 
-            return node
+            return expression_node
 
         raise SyntaxErrorCompiler(
             "Se esperaba un identificador, número, cadena, carácter o expresión entre paréntesis",
@@ -903,7 +839,6 @@ class Parser:
 
     def binary_node(
         self,
-        name: str,
         left: SyntaxNode,
         operator: Token,
         right: SyntaxNode
@@ -911,16 +846,13 @@ class Parser:
         """
         Crea un nodo binario usando el operador como raíz.
 
-        Antes:
-            OPERACION_SUMA_RESTA
-                NUMERO: 2
-                OPERADOR: +
-                NUMERO: 3
+        Ejemplo:
+            y + 1
 
-        Ahora:
-            OPERADOR: +
-                NUMERO: 2
-                NUMERO: 3
+        Árbol:
+            +
+            ├── y <ID>
+            └── 1 <INT>
         """
 
         node = SyntaxNode("OPERADOR", operator)
