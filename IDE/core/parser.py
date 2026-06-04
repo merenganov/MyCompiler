@@ -14,6 +14,17 @@ class Parser:
 
     Recibe la lista de tokens generada por lexer.tokenize()
     y construye un árbol sintáctico usando SyntaxNode.
+
+    En las expresiones binarias, el operador se usa como raíz del subárbol.
+    Ejemplo:
+        y = 2 + 3 - 1;
+
+    Se representa como:
+        OPERADOR: -
+            OPERADOR: +
+                NUMERO: 2
+                NUMERO: 3
+            NUMERO: 1
     """
 
     TYPE_TOKENS = {
@@ -230,11 +241,6 @@ class Parser:
 
     # =========================================================
     # Declaraciones
-    # Ejemplos:
-    # int x;
-    # int x = 10;
-    # float a, b = 2.5;
-    # real promedio = 9.8;
     # =========================================================
 
     def declaration(self) -> SyntaxNode:
@@ -282,11 +288,6 @@ class Parser:
 
     # =========================================================
     # Sentencias que empiezan con identificador
-    # Ejemplos:
-    # x = 10;
-    # x++;
-    # x--;
-    # funcion(a, b);
     # =========================================================
 
     def identifier_statement(self) -> SyntaxNode:
@@ -363,10 +364,6 @@ class Parser:
 
     # =========================================================
     # if
-    # Soporta:
-    # if (x > 0) { ... }
-    # if (x > 0) { ... } else { ... }
-    # if x > 0 then ... else ... end
     # =========================================================
 
     def if_statement(self) -> SyntaxNode:
@@ -433,9 +430,6 @@ class Parser:
 
     # =========================================================
     # while
-    # Soporta:
-    # while (x < 10) { ... }
-    # while x < 10 do ... end
     # =========================================================
 
     def while_statement(self) -> SyntaxNode:
@@ -472,9 +466,6 @@ class Parser:
 
     # =========================================================
     # do-until / do-while
-    # Soporta:
-    # do { ... } while (x < 10);
-    # do ... until x == 10;
     # =========================================================
 
     def do_statement(self) -> SyntaxNode:
@@ -515,14 +506,6 @@ class Parser:
 
     # =========================================================
     # cin / cout
-    # Soporta:
-    # cout(x);
-    # cout << x;
-    # cin(x);
-    # cin >> x;
-    #
-    # Nota: tu lexer no tiene TokenType para << o >>.
-    # Por eso aquí se interpretan como LESS LESS y GREATER GREATER.
     # =========================================================
 
     def cout_statement(self) -> SyntaxNode:
@@ -791,7 +774,6 @@ class Parser:
         node = self.term()
 
         while True:
-            # Evita que cout << x y cin >> x se interpreten como comparaciones.
             if self.check(TokenType.LESS) and self.peek_type(1) == TokenType.LESS:
                 break
 
@@ -863,8 +845,7 @@ class Parser:
         )
 
         if operator is not None:
-            node = SyntaxNode("OPERACION_UNARIA")
-            node.add_child(self.token_node("OPERADOR", operator))
+            node = SyntaxNode("OPERADOR", operator)
             node.add_child(self.unary())
             return node
 
@@ -927,8 +908,22 @@ class Parser:
         operator: Token,
         right: SyntaxNode
     ) -> SyntaxNode:
-        node = SyntaxNode(name)
+        """
+        Crea un nodo binario usando el operador como raíz.
+
+        Antes:
+            OPERACION_SUMA_RESTA
+                NUMERO: 2
+                OPERADOR: +
+                NUMERO: 3
+
+        Ahora:
+            OPERADOR: +
+                NUMERO: 2
+                NUMERO: 3
+        """
+
+        node = SyntaxNode("OPERADOR", operator)
         node.add_child(left)
-        node.add_child(self.token_node("OPERADOR", operator))
         node.add_child(right)
         return node
