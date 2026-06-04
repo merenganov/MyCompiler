@@ -5,10 +5,13 @@ from tkinter import ttk, font
 from core.state import IDEState
 from core.file_manager import FileManager
 from core.lexer import Lexer
+from core.parser import Parser
+from core.syntax_error import SyntaxErrorCompiler
+from core.symbol_table import SymbolTable
+
 from ui.menu import IDEMenu
 from ui.toolbar import Toolbar
 from ui.panels import Panels
-from core.symbol_table import SymbolTable
 
 
 class IDEWindow:
@@ -191,9 +194,9 @@ class IDEWindow:
         self.text_area.bind("<KeyPress>", self._on_cursor_move)
         self.text_area.bind("<Button-1>", self._on_cursor_move)
         self.text_area.bind("<ButtonRelease-1>", self._on_cursor_move)
-        self.text_area.bind("<MouseWheel>", self._on_mousewheel)   # Windows
-        self.text_area.bind("<Button-4>", self._on_mousewheel)     # Linux scroll up
-        self.text_area.bind("<Button-5>", self._on_mousewheel)     # Linux scroll down
+        self.text_area.bind("<MouseWheel>", self._on_mousewheel)
+        self.text_area.bind("<Button-4>", self._on_mousewheel)
+        self.text_area.bind("<Button-5>", self._on_mousewheel)
         self.text_area.bind("<Configure>", lambda e: self._redraw_line_numbers())
 
         self._redraw_line_numbers()
@@ -301,10 +304,6 @@ class IDEWindow:
             self.text_area.tag_add("ERROR", start_index, end_index)
 
     def _on_textscroll(self, first, last):
-        """
-        Se ejecuta cada vez que cambia la vista vertical del Text.
-        Mantiene sincronizado el scrollbar y los números de línea.
-        """
         self.editor_scrollbar.set(first, last)
         self._redraw_line_numbers()
         self._update_cursor_status()
@@ -404,6 +403,81 @@ class IDEWindow:
             self.file_manager.open_file_path(path)
 
     # ====================================================
+    # HELPERS PARA ERRORES Y ÁRBOL
+    # ====================================================
+
+    def _set_syntax_error_output(self, text: str):
+        possible_names = [
+            "err_syn",
+            "err_sin",
+            "err_sintactico",
+            "err_sintacticos",
+            "errores_sintacticos",
+        ]
+
+        for name in possible_names:
+            if hasattr(self.panels, name):
+                try:
+                    self.panels.bottom_pane.select(1)
+                except Exception:
+                    pass
+
+                self.panels.set_text(getattr(self.panels, name), text)
+                return
+
+        self.panels.set_text(self.panels.sintactico, text)
+
+    def _set_lexical_error_output(self, text: str):
+        if hasattr(self.panels, "err_lex"):
+            try:
+                self.panels.bottom_pane.select(0)
+            except Exception:
+                pass
+
+            self.panels.set_text(self.panels.err_lex, text)
+
+    def _open_syntax_tree_window(self, syntax_tree):
+        window = tk.Toplevel(self.root)
+        window.title("Árbol Sintáctico")
+        window.geometry("900x600")
+
+        container = ttk.Frame(window)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        tree = ttk.Treeview(container)
+        tree.heading("#0", text="Árbol Sintáctico", anchor="w")
+
+        y_scroll = ttk.Scrollbar(container, orient=tk.VERTICAL, command=tree.yview)
+        x_scroll = ttk.Scrollbar(container, orient=tk.HORIZONTAL, command=tree.xview)
+
+        tree.configure(
+            yscrollcommand=y_scroll.set,
+            xscrollcommand=x_scroll.set
+        )
+
+        tree.grid(row=0, column=0, sticky="nsew")
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll.grid(row=1, column=0, sticky="ew")
+
+        container.rowconfigure(0, weight=1)
+        container.columnconfigure(0, weight=1)
+
+        self._insert_syntax_node(tree, "", syntax_tree)
+
+    def _insert_syntax_node(self, tree, parent_id, node):
+        item_id = tree.insert(
+            parent_id,
+            "end",
+            text=str(node),
+            open=True
+        )
+
+        children = getattr(node, "children", [])
+
+        for child in children:
+            self._insert_syntax_node(tree, item_id, child)
+
+    # ====================================================
     # UI ACTIONS
     # ====================================================
 
@@ -475,8 +549,78 @@ class IDEWindow:
         self._apply_syntax_highlighting()
 
     def _ui_compile_syn(self):
+        code = self.text_area.get("1.0", "end-1c")
+
         self.panels.results_notebook.select(1)
-        self.panels.set_text(self.panels.sintactico, "Resultado Sintactico (placeholder)\n")
+        self.panels.set_text(self.panels.sintactico, "")
+        self._set_syntax_error_output("")
+        self._set_lexical_error_output("")
+
+        try:
+            result = Lexer(code).tokenize()
+
+            if isinstance(result, tuple) and len(result) == 2:
+                tokens, lexical_errors = result
+            else:
+                tokens = result
+                lexical_errors = []
+
+            if lexical_errors:
+                lexical_error_lines = []
+
+                for error in lexical_errors:
+                    message = getattr(error, "message", str(error))
+                    line = getattr(error, "line", "")
+                    column = getattr(error, "column", "")
+                    character = getattr(error, "character", "")
+
+                    lexical_error_lines.append(
+                        f"{message} Línea: {line}, columna: {column}, carácter: {character!r}"
+                    )
+
+                lexical_errors_text = "\n".join(lexical_error_lines) + "\n"
+
+                self.panels.set_text(
+                    self.panels.sintactico,
+                    "No se ejecutó el análisis sintáctico porque existen errores léxicos.\n\n"
+                    "Corrige primero los errores léxicos y vuelve a intentar.\n"
+                )
+
+                self._set_lexical_error_output(lexical_errors_text)
+                return
+
+            parser = Parser(tokens)
+            syntax_tree = parser.parse()
+
+            syntax_text = "Análisis sintáctico correcto.\n\n"
+            syntax_text += syntax_tree.to_text()
+
+            self.panels.results_notebook.select(1)
+            self.panels.set_text(self.panels.sintactico, syntax_text)
+            self._set_syntax_error_output("Sin errores sintácticos.\n")
+
+            self._open_syntax_tree_window(syntax_tree)
+
+        except SyntaxErrorCompiler as error:
+            error_text = str(error) + "\n"
+
+            self.panels.results_notebook.select(1)
+            self.panels.set_text(
+                self.panels.sintactico,
+                "Se encontraron errores sintácticos.\n\n"
+                "Revisa la pestaña de errores sintácticos.\n"
+            )
+
+            self._set_syntax_error_output(error_text)
+
+        except Exception as error:
+            self.panels.results_notebook.select(1)
+            self.panels.set_text(
+                self.panels.sintactico,
+                "Error inesperado al ejecutar el análisis sintáctico:\n\n"
+                + str(error)
+                + "\n"
+            )
 
     def _ui_compile_sem(self):
         code = self.text_area.get("1.0", "end-1c")
