@@ -16,7 +16,7 @@ from core.parser import Parser
 
 from core.syntax_error import SyntaxErrorCompiler
 
-from core.symbol_table import SymbolTable
+from core.semantic import SemanticAnalyzer
 
 
 
@@ -1039,9 +1039,25 @@ class IDEWindow:
         Abre una ventana independiente para mostrar
         el AST con anotaciones semánticas.
         """
+        previous_window = getattr(self, "_semantic_tree_window", None)
+
+        if previous_window is not None:
+            try:
+                if previous_window.winfo_exists():
+                    previous_window.destroy()
+            except tk.TclError:
+                pass
+
         window = tk.Toplevel(self.root)
+        self._semantic_tree_window = window
         window.title("Árbol Sintáctico con Anotaciones Semánticas")
         window.geometry("950x650")
+
+        def close_window():
+            self._semantic_tree_window = None
+            window.destroy()
+
+        window.protocol("WM_DELETE_WINDOW", close_window)
 
         container = ttk.Frame(window)
         container.pack(fill=tk.BOTH, expand=True)
@@ -1380,63 +1396,149 @@ class IDEWindow:
 
 
     def _ui_compile_sem(self):
-        """
-        Preparación visual de la fase semántica.
-
-        IMPORTANTE:
-        La lógica semántica real (recorrido del AST, inferencia de tipos,
-        conversiones y validaciones) corresponde a semantic.py / Persona 2.
-
-        Este método conserva el comportamiento básico que ya existía y
-        deja lista la visualización para la tabla de símbolos.
-        """
+        """Run the full semantic pipeline and display its real results."""
         code = self.text_area.get("1.0", "end-1c")
-        lines = code.splitlines()
+        self.panels.results_notebook.select(2)
+        self.panels.set_text(self.panels.lexico, "")
+        self.panels.set_text(self.panels.sintactico, "")
+        self.panels.set_text(self.panels.semantico, "")
+        self._set_symbol_table_output([])
+        self._set_lexical_error_output("")
+        self._set_syntax_error_output("")
+        self._set_semantic_error_output("")
 
-        table = SymbolTable()
-        errors = []
+        previous_window = getattr(self, "_semantic_tree_window", None)
+        if previous_window is not None:
+            try:
+                if previous_window.winfo_exists():
+                    previous_window.destroy()
+            except tk.TclError:
+                pass
+            self._semantic_tree_window = None
 
-        for i, raw in enumerate(lines, start=1):
-            line = raw.strip()
-
-            if not line or line.startswith("//"):
-                continue
-
-            if line.startswith("int ") or line.startswith("float "):
-                try:
-                    parts = line.replace(";", "").split()
-
-                    if len(parts) < 2:
-                        raise Exception(f"Linea {i}: declaracion incompleta")
-
-                    type_ = parts[0]
-                    name = parts[1]
-
-                    table.declare(
-                        name,
-                        type_,
-                        line=i
-                    )
-
-                except Exception as e:
-                    errors.append(str(e))
-
-        if errors:
+        try:
+            lexer_result = Lexer(code).tokenize()
+        except Exception as error:
+            message = f"Error inesperado al ejecutar el lexer:\n{error}\n"
             self.panels.set_text(
                 self.panels.semantico,
-                "Errores:\\n" + "\\n".join(errors) + "\\n"
+                "No se ejecutó el análisis semántico porque falló el lexer.\n",
             )
+            self._set_syntax_error_output(
+                "No se ejecutó el análisis sintáctico.\n"
+            )
+            self._set_semantic_error_output(
+                "No se ejecutó el análisis semántico.\n"
+            )
+            self._set_lexical_error_output(message)
+            return
+
+        if isinstance(lexer_result, tuple) and len(lexer_result) == 2:
+            tokens, lexical_errors = lexer_result
         else:
+            tokens = lexer_result
+            lexical_errors = []
+
+        if lexical_errors:
+            error_lines = []
+            for error in lexical_errors:
+                message = getattr(error, "message", str(error))
+                line = getattr(error, "line", "")
+                column = getattr(error, "column", "")
+                character = getattr(error, "character", "")
+                error_lines.append(
+                    f"{message} Línea: {line}, columna: {column}, "
+                    f"carácter: {character!r}"
+                )
+
             self.panels.set_text(
                 self.panels.semantico,
-                "Analisis semantico correcto.\\n"
+                "No se ejecutó el análisis semántico porque existen "
+                "errores léxicos.\n",
             )
+            self.panels.set_text(
+                self.panels.sintactico,
+                "No se ejecutó el análisis sintáctico porque existen "
+                "errores léxicos.\n",
+            )
+            self._set_syntax_error_output(
+                "No se ejecutó el análisis sintáctico porque existen "
+                "errores léxicos.\n"
+            )
+            self._set_semantic_error_output(
+                "No se ejecutó el análisis semántico.\n"
+            )
+            self._set_lexical_error_output("\n".join(error_lines) + "\n")
+            return
 
-        self._set_symbol_table_output(
-            table.get_all()
+        self._set_lexical_error_output("Sin errores léxicos.\n")
+
+        try:
+            syntax_tree = Parser(tokens).parse()
+        except SyntaxErrorCompiler as error:
+            self.panels.set_text(
+                self.panels.sintactico,
+                "Se encontraron errores sintácticos.\n\n"
+                "Revisa la pestaña de errores sintácticos.\n",
+            )
+            self.panels.set_text(
+                self.panels.semantico,
+                "No se ejecutó el análisis semántico porque existen "
+                "errores sintácticos.\n",
+            )
+            self._set_semantic_error_output(
+                "No se ejecutó el análisis semántico.\n"
+            )
+            self._set_syntax_error_output(str(error) + "\n")
+            return
+        except Exception as error:
+            message = (
+                "Error inesperado al ejecutar el análisis sintáctico:\n"
+                f"{error}\n"
+            )
+            self.panels.set_text(self.panels.sintactico, message)
+            self.panels.set_text(self.panels.semantico, message)
+            self._set_semantic_error_output(
+                "No se ejecutó el análisis semántico.\n"
+            )
+            self._set_syntax_error_output(message)
+            return
+
+        self._set_syntax_error_output("Sin errores sintácticos.\n")
+        self.panels.set_text(
+            self.panels.sintactico,
+            "Análisis sintáctico correcto.\n\n" + syntax_tree.to_text(),
         )
 
-        self.panels.results_notebook.select(4)
+        try:
+            result = SemanticAnalyzer().analyze(syntax_tree)
+        except Exception as error:
+            message = (
+                "Error inesperado al ejecutar el análisis semántico:\n"
+                f"{error}\n"
+            )
+            self.panels.set_text(self.panels.semantico, message)
+            self._set_semantic_error_output(message)
+            return
+
+        semantic_errors = result.errors.get_objects()
+        self._set_symbol_table_output(result.symbol_table.get_all())
+
+        if semantic_errors:
+            summary = (
+                "Análisis semántico completado con "
+                f"{len(semantic_errors)} error(es).\n\n"
+            )
+            error_text = "\n".join(str(error) for error in semantic_errors) + "\n"
+        else:
+            summary = "Análisis semántico correcto.\n\n"
+            error_text = "Sin errores semánticos.\n"
+
+        semantic_text = summary + result.annotated_ast.to_semantic_text()
+        self.panels.set_text(self.panels.semantico, semantic_text)
+        self._set_semantic_error_output(error_text)
+        self.panels.results_notebook.select(2)
+        self._open_semantic_tree_window(result.annotated_ast)
 
 
     def _ui_compile_ir(self):
