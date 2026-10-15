@@ -1806,23 +1806,81 @@ class IDEWindow:
         """
         Muestra la tabla de símbolos de forma ordenada y legible.
 
-        Conserva la misma información de la Fase 3, pero separa
-        visualmente las columnas para evitar que, por ejemplo, una
-        línea 38 y una dirección 0 se vean como "380".
+        La columna LINEAS conserva todas las apariciones del identificador
+        y, cuando el contenido supera el ancho disponible, continúa en
+        renglones adicionales sin desplazar las demás columnas.
         """
+
         lines = []
 
+        # ======================================================
+        # ANCHOS DE COLUMNAS
+        # ======================================================
+
+        NAME_WIDTH = 12
+        TYPE_WIDTH = 10
+        LINES_WIDTH = 45
+        ADDRESS_WIDTH = 10
+        SCOPE_WIDTH = 15
+        VALUE_WIDTH = 15
+
+        # ======================================================
+        # ENCABEZADO
+        # ======================================================
+
         header = (
-            f"{'NOMBRE':<12} | "
-            f"{'TIPO':<10} | "
-            f"{'LINEAS':<45} | "
-            f"{'DIRECCION':<10} | "
-            f"{'AMBITO':<15} | "
-            f"{'VALOR':<15}"
+            f"{'NOMBRE':<{NAME_WIDTH}} | "
+            f"{'TIPO':<{TYPE_WIDTH}} | "
+            f"{'LINEAS':<{LINES_WIDTH}} | "
+            f"{'DIRECCION':<{ADDRESS_WIDTH}} | "
+            f"{'AMBITO':<{SCOPE_WIDTH}} | "
+            f"{'VALOR':<{VALUE_WIDTH}}"
         )
 
         lines.append(header)
         lines.append("-" * len(header))
+
+        # ======================================================
+        # DIVISIÓN VISUAL DE LA COLUMNA LINEAS
+        # ======================================================
+
+        def split_line_occurrences(symbol_lines):
+            """
+            Divide las apariciones en bloques que no excedan
+            LINES_WIDTH, sin cortar números ni eliminar duplicados.
+            """
+
+            if not symbol_lines:
+                return ["-"]
+
+            chunks = []
+            current = ""
+
+            for line_number in symbol_lines:
+                line_text = str(line_number)
+
+                candidate = (
+                    f"{current}, {line_text}"
+                    if current
+                    else line_text
+                )
+
+                if len(candidate) <= LINES_WIDTH:
+                    current = candidate
+                else:
+                    if current:
+                        chunks.append(current)
+
+                    current = line_text
+
+            if current:
+                chunks.append(current)
+
+            return chunks
+
+        # ======================================================
+        # CONTENIDO
+        # ======================================================
 
         if not symbols:
             lines.append("Sin símbolos registrados.")
@@ -1832,12 +1890,6 @@ class IDEWindow:
                 data_type = symbol.get("data_type", "")
                 symbol_lines = symbol.get("lines", [])
 
-                if isinstance(symbol_lines, list):
-                    symbol_lines = ", ".join(str(line) for line in symbol_lines)
-
-                if not symbol_lines:
-                    symbol_lines = "-"
-
                 address = symbol.get("address", None)
                 scope = symbol.get("scope", None)
                 value = symbol.get("value", None)
@@ -1846,14 +1898,28 @@ class IDEWindow:
                 scope_text = str(scope) if scope is not None else "-"
                 value_text = str(value) if value is not None else "-"
 
+                line_chunks = split_line_occurrences(symbol_lines)
+
+                # Primer renglón: muestra todos los datos del símbolo.
                 lines.append(
-                    f"{str(name):<12} | "
-                    f"{str(data_type):<10} | "
-                    f"{str(symbol_lines):<45} | "
-                    f"{address_text:<10} | "
-                    f"{scope_text:<15} | "
-                    f"{value_text:<15}"
+                    f"{str(name):<{NAME_WIDTH}} | "
+                    f"{str(data_type):<{TYPE_WIDTH}} | "
+                    f"{line_chunks[0]:<{LINES_WIDTH}} | "
+                    f"{address_text:<{ADDRESS_WIDTH}} | "
+                    f"{scope_text:<{SCOPE_WIDTH}} | "
+                    f"{value_text:<{VALUE_WIDTH}}"
                 )
+
+                # Renglones adicionales: solo continúa la columna LINEAS.
+                for chunk in line_chunks[1:]:
+                    lines.append(
+                        f"{'':<{NAME_WIDTH}} | "
+                        f"{'':<{TYPE_WIDTH}} | "
+                        f"{chunk:<{LINES_WIDTH}} | "
+                        f"{'':<{ADDRESS_WIDTH}} | "
+                        f"{'':<{SCOPE_WIDTH}} | "
+                        f"{'':<{VALUE_WIDTH}}"
+                    )
 
         text = "\n".join(lines) + "\n"
 

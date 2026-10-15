@@ -15,6 +15,10 @@ class Symbol:
         self.data_type = data_type
 
         # Líneas donde aparece el identificador.
+        #
+        # IMPORTANTE:
+        # Se conserva cada aparición, incluso si varias ocurren
+        # dentro de la misma línea.
         self.lines = []
 
         if line is not None:
@@ -31,15 +35,22 @@ class Symbol:
 
     def add_line(self, line):
         """
-        Registra una nueva línea donde fue utilizado
-        el identificador.
+        Registra una nueva aparición del identificador.
+
+        Cada uso se conserva aunque ocurra varias veces
+        dentro de la misma línea.
+
+        Ejemplo:
+            y = y + y + y;
+
+        Si está en la línea 10, se registrará:
+            10, 10, 10, 10
         """
 
         if line is None:
             return
 
-        if line not in self.lines:
-            self.lines.append(line)
+        self.lines.append(line)
 
     def to_dict(self):
         """
@@ -249,8 +260,10 @@ class SymbolTable:
 
     def add_usage(self, name, line):
         """
-        Registra una línea donde fue utilizado
-        un identificador.
+        Registra una aparición de un identificador.
+
+        Cada aparición se conserva aunque ocurra varias
+        veces dentro de la misma línea.
 
         Retorna True si pudo registrarse.
         Retorna False si el identificador no existe.
