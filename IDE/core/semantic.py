@@ -1591,11 +1591,11 @@ class SemanticAnalyzer:
 
         node.set_annotation("operator_form", operator_form)
 
-        expression_value = new_value if operator_form == "prefix" else old_value
+        # Para este compilador, ++ y -- se valoran con el valor resultante
+        # después de aplicar la operación, incluso en forma postfix (a++;).
+        if new_value is not None:
 
-        if expression_value is not None:
-
-            node.set_annotation("value", expression_value)
+            node.set_annotation("value", new_value)
 
 
 

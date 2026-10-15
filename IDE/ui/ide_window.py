@@ -2761,6 +2761,9 @@ class IDEWindow:
 
         self.panels.set_text(self.panels.semantico, "")
 
+        if hasattr(self.panels, "clear_semantic_tree"):
+            self.panels.clear_semantic_tree()
+
         self._set_symbol_table_output([])
 
         self._set_lexical_error_output("")
@@ -3025,9 +3028,12 @@ class IDEWindow:
 
 
 
-        semantic_text = summary + result.annotated_ast.to_semantic_text()
+        # El resumen permanece como texto en la parte superior de la pestaña.
+        # El AST anotado se muestra abajo como un Treeview colapsable.
+        self.panels.set_text(self.panels.semantico, summary)
 
-        self.panels.set_text(self.panels.semantico, semantic_text)
+        if hasattr(self.panels, "set_semantic_tree"):
+            self.panels.set_semantic_tree(result.annotated_ast)
 
         self._set_semantic_error_output(error_text)
 
