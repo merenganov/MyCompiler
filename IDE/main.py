@@ -7,7 +7,7 @@ from ui.ide_window import IDEWindow
 THEMES = {
     "dark": {
         "BG": "#1e1e1e",
-        "PANEL": "#252526",
+        "PANEL": "#252526",     
         "BTN": "#2d2d2d",
         "FG": "#d4d4d4",
         "FG_DIM": "#a0a0a0",
